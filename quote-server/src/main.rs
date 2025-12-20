@@ -1,16 +1,21 @@
 #![deny(unreachable_pub)]
 
 use crate::stock_quotes_generator::StockQuotesGenerator;
+use crate::tracing::initialize_tracing_subscribe;
+use ::tracing::{info, instrument, trace, warn};
 use clap::Parser;
-use std::net::{IpAddr, Ipv4Addr, TcpListener};
+use std::net::{IpAddr, Ipv4Addr, TcpListener, TcpStream};
 
 mod args;
 mod stock_quote;
 mod stock_quotes_generator;
+mod tracing;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = args::Args::parse();
-    let port = args.port.unwrap_or(8080);
+    initialize_tracing_subscribe("trace".into());
+
+    let port = args.port.unwrap_or(5152);
     let address = args
         .address
         .unwrap_or(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
@@ -19,9 +24,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let file = std::fs::File::open(&args.tickers_file)?;
     let generator = StockQuotesGenerator::read_from(file)?;
 
+    info!("Listening on {}:{}", address, port);
     for stream in listener.incoming() {
-        println!("Got a connection!");
+        let stream = match stream {
+            Ok(stream) => stream,
+            Err(e) => {
+                warn!("Failed to accept connection: {}", e);
+                continue;
+            }
+        };
     }
 
     Ok(())
 }
+
+#[instrument(name = "Handle connection", skip(stream))]
+fn handle_connection(stream: &mut TcpStream) {}

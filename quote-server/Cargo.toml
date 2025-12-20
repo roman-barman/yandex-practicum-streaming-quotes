@@ -8,3 +8,6 @@ rust_decimal = "1"
 chrono = "0.4"
 rand = "0.9"
 clap = { version = "4", features = ["derive"] }
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter", "json", "chrono"] }
+tracing = "0.1"
+tracing-log = "0.2"
