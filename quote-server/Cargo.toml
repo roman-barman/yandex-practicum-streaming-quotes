@@ -7,3 +7,4 @@ edition = "2024"
 rust_decimal = "1"
 chrono = "0.4"
 rand = "0.9"
+clap = { version = "4", features = ["derive"] }
