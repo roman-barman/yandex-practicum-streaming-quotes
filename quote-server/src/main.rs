@@ -1,14 +1,13 @@
 #![deny(unreachable_pub)]
 
-use crate::stock_quotes_generator::StockQuotesGenerator;
+use crate::app::StockQuotesGenerator;
 use crate::tracing::initialize_tracing_subscribe;
-use ::tracing::{info, instrument, trace, warn};
+use ::tracing::{info, instrument, warn};
 use clap::Parser;
 use std::net::{IpAddr, Ipv4Addr, TcpListener, TcpStream};
 
+mod app;
 mod args;
-mod stock_quote;
-mod stock_quotes_generator;
 mod tracing;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

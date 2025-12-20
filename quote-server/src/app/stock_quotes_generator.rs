@@ -1,12 +1,12 @@
-use crate::stock_quote::StockQuote;
+use crate::app::StockQuote;
 use std::io::{BufRead, BufReader, Read};
 
-pub(super) struct StockQuotesGenerator {
+pub(crate) struct StockQuotesGenerator {
     tickers: Vec<String>,
 }
 
 impl StockQuotesGenerator {
-    pub(super) fn read_from<R: Read>(reader: R) -> Result<Self, std::io::Error> {
+    pub(crate) fn read_from<R: Read>(reader: R) -> Result<Self, std::io::Error> {
         let buffer = BufReader::new(reader);
         let mut tickers = Vec::new();
         for line in buffer.lines() {

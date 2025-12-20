@@ -3,7 +3,7 @@ use rand::Rng;
 use rust_decimal::Decimal;
 
 #[derive(Debug, Clone)]
-pub(super) struct StockQuote {
+pub(crate) struct StockQuote {
     pub ticker: String,
     pub price: Decimal,
     pub volume: u32,
