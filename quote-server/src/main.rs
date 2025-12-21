@@ -1,10 +1,13 @@
 #![deny(unreachable_pub)]
 
+use std::io::Read;
 use crate::app::StockQuotesGenerator;
 use crate::tracing::initialize_tracing_subscribe;
 use ::tracing::{info, instrument, warn};
 use clap::Parser;
 use std::net::{IpAddr, Ipv4Addr, TcpListener, TcpStream};
+use rancor::Error;
+use quote_streaming::Commands;
 
 mod app;
 mod args;
@@ -32,10 +35,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 continue;
             }
         };
+        handle_connection(stream)?;
     }
 
     Ok(())
 }
 
-#[instrument(name = "Handle connection", skip(stream))]
-fn handle_connection(stream: &mut TcpStream) {}
+#[instrument(name = "Handle connection", skip_all)]
+fn handle_connection(mut stream: TcpStream) -> Result<(), std::io::Error> {
+    let mut buffer = Vec::new();
+    stream.read_to_end(&mut buffer)?;
+    let command = rkyv::from_bytes::<Commands, Error>(&buffer).unwrap();
+    info!("Received command: {:?}", command);
+    Ok(())
+}

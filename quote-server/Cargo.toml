@@ -11,3 +11,6 @@ clap = { version = "4", features = ["derive"] }
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter", "json", "chrono"] }
 tracing = "0.1"
 tracing-log = "0.2"
+rkyv = { workspace = true }
+quote-streaming = { path = "../quote-streaming" }
+rancor = { workspace = true }
