@@ -1,4 +1,4 @@
-use quote_streaming::Commands;
+use quote_streaming::{Commands, StockQuote};
 use rancor::Error;
 use std::io::Write;
 use std::net::{IpAddr, Ipv4Addr, TcpStream, UdpSocket};
@@ -18,9 +18,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     stream.write_all(bytes.as_slice())?;
 
     loop {
-        let mut buf = [0; 50];
-        let len = socket.recv(&mut buf)?;
-        println!("{}", String::from_utf8_lossy(&buf[..len]));
+        let mut buffer = [0; 1024];
+        let len = socket.recv(&mut buffer)?;
+        let quotes = rkyv::from_bytes::<Vec<StockQuote>, rancor::Error>(&buffer[..len])?;
+        for quote in quotes {
+            println!("{}", quote);
+        }
     }
 
     Ok(())

@@ -48,7 +48,12 @@ fn stream_quotes(
         match rx.try_recv() {
             Ok(quotes) => {
                 trace!("Received quotes");
-                udp_socket.send_to("Hello".as_bytes(), (address, port))?;
+                let quotes_to_send = quotes
+                    .into_iter()
+                    .filter(|quote| tickers.iter().any(|ticker| ticker == quote.ticker()))
+                    .collect::<Vec<_>>();
+                let quotes_bytes = rkyv::to_bytes::<rancor::Error>(&quotes_to_send)?;
+                udp_socket.send_to(&quotes_bytes, (address, port))?;
             }
             Err(crossbeam_channel::TryRecvError::Empty) => {
                 thread::sleep(Duration::from_millis(50));
@@ -66,5 +71,5 @@ pub(crate) enum HandlerError {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
     #[error("Deserialization command error: {0}")]
-    Deserialization(#[from] rancor::Error),
+    DeserializationOrSerialization(#[from] rancor::Error),
 }

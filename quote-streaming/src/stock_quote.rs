@@ -41,6 +41,10 @@ impl StockQuote {
             timestamp: Utc::now().timestamp(),
         }
     }
+
+    pub fn ticker(&self) -> &str {
+        &self.ticker
+    }
 }
 
 #[cfg(test)]
