@@ -1,11 +1,15 @@
 #![deny(unreachable_pub)]
 
-use crate::app::{StockQuotesGenerator, handle_connection};
+use crate::app::{StockQuote, StockQuotesGenerator, handle_connection, quotes_generator};
 use crate::tracing::initialize_tracing_subscribe;
-use ::tracing::{info, warn};
+use ::tracing::{error, info, warn};
 use clap::Parser;
+use std::io::ErrorKind;
 use std::net::{IpAddr, Ipv4Addr, TcpListener};
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, mpsc};
 use std::thread;
+use std::time::Duration;
 
 mod app;
 mod args;
@@ -20,17 +24,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .address
         .unwrap_or(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
 
-    let listener = TcpListener::bind((address, port))?;
-    let file = std::fs::File::open(&args.tickers_file)?;
-    let generator = StockQuotesGenerator::read_from(file)?;
+    let (is_generator_working, rx) = crate_quotes_generator(&args)?;
 
+    let listener = TcpListener::bind((address, port))?;
+    listener.set_nonblocking(true)?;
     info!("Listening on {}:{}", address, port);
+
     for stream in listener.incoming() {
+        if !is_generator_working.load(std::sync::atomic::Ordering::SeqCst) {
+            break;
+        }
+
         let stream = match stream {
             Ok(stream) => stream,
-            Err(e) => {
-                warn!("Failed to accept connection: {}", e);
+            Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
+                thread::sleep(Duration::from_millis(100));
                 continue;
+            }
+            Err(e) => {
+                error!("Failed to accept connection: {}", e);
+                break;
             }
         };
 
@@ -54,4 +67,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+fn crate_quotes_generator(
+    args: &args::Args,
+) -> Result<(Arc<AtomicBool>, mpsc::Receiver<Vec<StockQuote>>), std::io::Error> {
+    let file = std::fs::File::open(&args.tickers_file)?;
+    let generator = StockQuotesGenerator::read_from(file)?;
+
+    let (tx, rx) = mpsc::channel::<Vec<StockQuote>>();
+    let working = Arc::new(AtomicBool::new(true));
+    let working_copy = Arc::clone(&working);
+    thread::spawn(move || quotes_generator(generator, tx, working_copy));
+
+    Ok((working, rx))
 }
