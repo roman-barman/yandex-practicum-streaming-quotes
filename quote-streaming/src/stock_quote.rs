@@ -21,10 +21,7 @@ impl Display for StockQuote {
             MappedLocalTime::Single(date_time) => writeln!(
                 f,
                 "{}: {} ({}) {}",
-                self.ticker,
-                price,
-                self.volume,
-                date_time.to_string()
+                self.ticker, price, self.volume, date_time
             ),
             _ => writeln!(f, "{} {} {}", self.ticker, price, self.volume),
         }
