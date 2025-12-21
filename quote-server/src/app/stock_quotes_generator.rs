@@ -22,3 +22,26 @@ impl StockQuotesGenerator {
             .collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    #[test]
+    fn test_read_from() {
+        let tickers = "AAPL\nMSFT\nGOOGL";
+        let reader = Cursor::new(tickers);
+        let generator = StockQuotesGenerator::read_from(reader).unwrap();
+        assert_eq!(generator.tickers, vec!["AAPL", "MSFT", "GOOGL"]);
+    }
+
+    #[test]
+    fn test_generate() {
+        let generator = StockQuotesGenerator {
+            tickers: vec!["AAPL".to_string(), "MSFT".to_string(), "GOOGL".to_string()],
+        };
+        let quotes = generator.generate();
+        assert_eq!(quotes.len(), 3);
+    }
+}
