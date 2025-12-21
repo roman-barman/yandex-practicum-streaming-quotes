@@ -1,8 +1,8 @@
 use crate::app::StockQuotesGenerator;
+use crate::app::server_cancellation_token::ServerCancellationToken;
 use crossbeam_channel::Sender;
 use quote_streaming::StockQuote;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 use std::thread;
 use std::time::Duration;
 use tracing::{error, instrument, trace};
@@ -11,10 +11,10 @@ use tracing::{error, instrument, trace};
 pub(crate) fn quotes_generator(
     generator: StockQuotesGenerator,
     tx: Sender<Vec<StockQuote>>,
-    is_server_working: Arc<AtomicBool>,
+    cancellation_token: Arc<ServerCancellationToken>,
 ) {
     loop {
-        if !is_server_working.load(std::sync::atomic::Ordering::SeqCst) {
+        if cancellation_token.is_cancelled() {
             return;
         }
 
@@ -23,7 +23,7 @@ pub(crate) fn quotes_generator(
             Ok(_) => trace!("Quotes was generated and sent"),
             Err(_) => {
                 error!("Failed to send quotes");
-                is_server_working.store(false, std::sync::atomic::Ordering::SeqCst);
+                cancellation_token.cancel();
                 return;
             }
         }

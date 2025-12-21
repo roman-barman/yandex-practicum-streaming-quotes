@@ -1,9 +1,9 @@
+use crate::app::server_cancellation_token::ServerCancellationToken;
 use crossbeam_channel::Receiver;
 use quote_streaming::{Commands, StockQuote};
 use std::io::Read;
 use std::net::UdpSocket;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 use std::thread;
 use std::time::Duration;
 use tracing::{info, instrument, trace, warn};
@@ -11,7 +11,7 @@ use tracing::{info, instrument, trace, warn};
 #[instrument(name = "Handle connection", skip_all)]
 pub(crate) fn handle_connection<R: Read>(
     mut reader: R,
-    is_server_working: Arc<AtomicBool>,
+    cancellation_token: Arc<ServerCancellationToken>,
     udp_socket: Arc<UdpSocket>,
     rx: Receiver<Vec<StockQuote>>,
 ) -> Result<(), HandlerError> {
@@ -26,15 +26,15 @@ pub(crate) fn handle_connection<R: Read>(
             ticker,
             port,
             address,
-        } => stream_quotes(is_server_working, udp_socket, rx, ticker, port, address)?,
+        } => stream_quotes(cancellation_token, udp_socket, rx, ticker, port, address)?,
     }
 
     Ok(())
 }
 
-#[instrument(name = "Stream quotes", skip(is_server_working, udp_socket, rx), fields(tickers = ?tickers, port, address))]
+#[instrument(name = "Stream quotes", skip(cancellation_token, udp_socket, rx), fields(tickers = ?tickers, port, address))]
 fn stream_quotes(
-    is_server_working: Arc<AtomicBool>,
+    cancellation_token: Arc<ServerCancellationToken>,
     udp_socket: Arc<UdpSocket>,
     rx: Receiver<Vec<StockQuote>>,
     tickers: Vec<String>,
@@ -42,7 +42,7 @@ fn stream_quotes(
     address: std::net::IpAddr,
 ) -> Result<(), HandlerError> {
     loop {
-        if !is_server_working.load(std::sync::atomic::Ordering::SeqCst) {
+        if cancellation_token.is_cancelled() {
             return Ok(());
         }
         match rx.try_recv() {

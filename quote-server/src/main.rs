@@ -1,6 +1,8 @@
 #![deny(unreachable_pub)]
 
-use crate::app::{StockQuotesGenerator, handle_connection, quotes_generator};
+use crate::app::{
+    ServerCancellationToken, StockQuotesGenerator, handle_connection, quotes_generator,
+};
 use crate::tracing::initialize_tracing_subscribe;
 use ::tracing::{error, info, warn};
 use clap::Parser;
@@ -9,7 +11,6 @@ use quote_streaming::StockQuote;
 use std::io::ErrorKind;
 use std::net::{IpAddr, Ipv4Addr, TcpListener, UdpSocket};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -28,10 +29,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
 
     let mut threads = Vec::new();
-    let is_server_working = Arc::new(AtomicBool::new(true));
-    set_ctrlc_handler(Arc::clone(&is_server_working));
+    let cancellation_token = Arc::new(ServerCancellationToken::default());
+    set_ctrlc_handler(Arc::clone(&cancellation_token));
 
-    let (rx, generator_thread) = crate_quotes_generator(&args, Arc::clone(&is_server_working))?;
+    let (rx, generator_thread) = crate_quotes_generator(&args, Arc::clone(&cancellation_token))?;
     threads.push(generator_thread);
 
     let tcp_listener = TcpListener::bind((address, port))?;
@@ -43,7 +44,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Listening on {}:{}", address, port);
 
     for stream in tcp_listener.incoming() {
-        if !is_server_working.load(Ordering::SeqCst) {
+        if cancellation_token.is_cancelled() {
             break;
         }
 
@@ -58,7 +59,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 break;
             }
         };
-        let is_server_working_copy = Arc::clone(&is_server_working);
+        let cancellation_token_copy = Arc::clone(&cancellation_token);
         let udp_socket_copy = Arc::clone(&udp_socket);
         let rx_copy = rx.clone();
 
@@ -72,7 +73,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
             info!("Accepted connection from {}", socket_addr);
 
-            match handle_connection(stream, is_server_working_copy, udp_socket_copy, rx_copy) {
+            match handle_connection(stream, cancellation_token_copy, udp_socket_copy, rx_copy) {
                 Ok(()) => info!("Connection closed for {}", socket_addr),
                 Err(e) => {
                     warn!("{}", e);
@@ -82,7 +83,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         threads.push(handler_thread);
     }
 
-    is_server_working.store(false, Ordering::SeqCst);
+    cancellation_token.cancel();
 
     for thread in threads {
         thread.join().expect("Failed to join thread");
@@ -95,20 +96,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn crate_quotes_generator(
     args: &args::Args,
-    is_server_working: Arc<AtomicBool>,
+    cancellation_token: Arc<ServerCancellationToken>,
 ) -> Result<(Receiver<Vec<StockQuote>>, JoinHandle<()>), std::io::Error> {
     let file = std::fs::File::open(&args.tickers_file)?;
     let generator = StockQuotesGenerator::read_from(file)?;
 
     let (tx, rx) = unbounded::<Vec<StockQuote>>();
-    let thread = thread::spawn(move || quotes_generator(generator, tx, is_server_working));
+    let thread = thread::spawn(move || quotes_generator(generator, tx, cancellation_token));
 
     Ok((rx, thread))
 }
 
-fn set_ctrlc_handler(is_server_working: Arc<AtomicBool>) {
+fn set_ctrlc_handler(cancellation_token: Arc<ServerCancellationToken>) {
     ctrlc::set_handler(move || {
-        is_server_working.store(false, Ordering::SeqCst);
+        cancellation_token.cancel();
     })
     .expect("Error setting Ctrl-C handler");
 }

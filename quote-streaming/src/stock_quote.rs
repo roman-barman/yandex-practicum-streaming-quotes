@@ -18,12 +18,12 @@ impl Display for StockQuote {
         let date_time = Utc.timestamp_opt(self.timestamp, 0);
         let price = Decimal::new(self.price, 2);
         match date_time {
-            MappedLocalTime::Single(date_time) => writeln!(
+            MappedLocalTime::Single(date_time) => write!(
                 f,
                 "{}: {} ({}) {}",
                 self.ticker, price, self.volume, date_time
             ),
-            _ => writeln!(f, "{} {} {}", self.ticker, price, self.volume),
+            _ => write!(f, "{} {} {}", self.ticker, price, self.volume),
         }
     }
 }

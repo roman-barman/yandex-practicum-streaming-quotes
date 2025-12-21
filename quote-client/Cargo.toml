@@ -1,5 +1,5 @@
 [package]
-name = "qoute-client"
+name = "quote-client"
 version = "0.1.0"
 edition = "2024"
 
