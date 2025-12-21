@@ -1,4 +1,4 @@
-use crate::app::StockQuote;
+use quote_streaming::StockQuote;
 use std::io::{BufRead, BufReader, Read};
 
 pub(crate) struct StockQuotesGenerator {

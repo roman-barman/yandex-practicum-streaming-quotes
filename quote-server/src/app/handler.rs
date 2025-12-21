@@ -1,6 +1,5 @@
-use crate::app::StockQuote;
 use crossbeam_channel::Receiver;
-use quote_streaming::Commands;
+use quote_streaming::{Commands, StockQuote};
 use std::io::Read;
 use std::net::UdpSocket;
 use std::sync::Arc;

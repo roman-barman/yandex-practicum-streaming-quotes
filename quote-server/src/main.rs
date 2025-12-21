@@ -1,10 +1,11 @@
 #![deny(unreachable_pub)]
 
-use crate::app::{StockQuote, StockQuotesGenerator, handle_connection, quotes_generator};
+use crate::app::{StockQuotesGenerator, handle_connection, quotes_generator};
 use crate::tracing::initialize_tracing_subscribe;
 use ::tracing::{error, info, warn};
 use clap::Parser;
 use crossbeam_channel::{Receiver, unbounded};
+use quote_streaming::StockQuote;
 use std::io::ErrorKind;
 use std::net::{IpAddr, Ipv4Addr, TcpListener, UdpSocket};
 use std::sync::Arc;

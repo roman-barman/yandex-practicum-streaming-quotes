@@ -1,5 +1,6 @@
-use crate::app::{StockQuote, StockQuotesGenerator};
+use crate::app::StockQuotesGenerator;
 use crossbeam_channel::Sender;
+use quote_streaming::StockQuote;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::thread;
