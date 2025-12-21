@@ -7,5 +7,6 @@ pub enum Commands {
     Stream {
         ticker: Vec<String>,
         address: IpAddr,
+        port: u16,
     },
 }

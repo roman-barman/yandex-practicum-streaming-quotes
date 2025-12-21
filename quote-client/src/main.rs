@@ -10,6 +10,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let command = Commands::Stream {
         ticker: vec!["AAPL".to_string(), "GOOGL".to_string()],
         address: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+        port: 5152,
     };
     let bytes = rkyv::to_bytes::<Error>(&command).unwrap();
     stream.write_all(bytes.as_slice())?;
