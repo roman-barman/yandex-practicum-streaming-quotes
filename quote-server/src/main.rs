@@ -1,13 +1,10 @@
 #![deny(unreachable_pub)]
 
-use crate::app::StockQuotesGenerator;
+use crate::app::{StockQuotesGenerator, handle_connection};
 use crate::tracing::initialize_tracing_subscribe;
-use ::tracing::{info, instrument, warn};
+use ::tracing::{info, warn};
 use clap::Parser;
-use quote_streaming::Commands;
-use rancor::Error;
-use std::io::Read;
-use std::net::{IpAddr, Ipv4Addr, TcpListener, TcpStream};
+use std::net::{IpAddr, Ipv4Addr, TcpListener};
 use std::thread;
 
 mod app;
@@ -36,40 +33,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 continue;
             }
         };
+
         thread::spawn(|| {
-            handle_connection(stream);
+            let socket_addr = match stream.peer_addr() {
+                Ok(addr) => addr,
+                Err(e) => {
+                    warn!("Failed to get peer address: {}", e);
+                    return;
+                }
+            };
+            info!("Accepted connection from {}", socket_addr);
+
+            match handle_connection(stream) {
+                Ok(()) => info!("Connection closed for {}", socket_addr),
+                Err(e) => {
+                    warn!("{}", e);
+                }
+            }
         });
     }
 
     Ok(())
-}
-
-#[instrument(name = "Handle connection", skip_all)]
-fn handle_connection(mut stream: TcpStream) {
-    let socket_addr = match stream.peer_addr() {
-        Ok(addr) => addr,
-        Err(e) => {
-            warn!("Failed to get peer address: {}", e);
-            return;
-        }
-    };
-    info!("Accepted connection from {}", socket_addr);
-
-    let mut buffer = Vec::new();
-    match stream.read_to_end(&mut buffer) {
-        Ok(_) => (),
-        Err(e) => {
-            warn!("Failed to read from stream: {}", e);
-            return;
-        }
-    }
-
-    let command = match  rkyv::from_bytes::<Commands, Error>(&buffer) {
-        Ok(command) => command,
-        Err(e) => {
-            warn!("Failed to deserialize command: {}", e);
-            return;
-        }
-    };
-    info!("Received command: {:?}", command);
 }
