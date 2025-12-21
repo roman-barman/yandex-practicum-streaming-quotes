@@ -2,6 +2,7 @@
 
 use crate::app::{
     ServerCancellationToken, StockQuotesGenerator, handle_connection, quotes_generator,
+    start_monitoring,
 };
 use crate::tracing::initialize_tracing_subscribe;
 use ::tracing::{error, info, warn};
@@ -32,7 +33,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cancellation_token = Arc::new(ServerCancellationToken::default());
     set_ctrlc_handler(Arc::clone(&cancellation_token));
 
-    let (rx, generator_thread) = crate_quotes_generator(&args, Arc::clone(&cancellation_token))?;
+    let (rx, generator_thread) = run_quotes_generator(&args, Arc::clone(&cancellation_token))?;
     threads.push(generator_thread);
 
     let tcp_listener = TcpListener::bind((address, port))?;
@@ -42,6 +43,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     udp_socket.set_nonblocking(true)?;
 
     info!("Listening on {}:{}", address, port);
+
+    let monitoring_thread =
+        run_monitoring(Arc::clone(&udp_socket), Arc::clone(&cancellation_token));
+    threads.push(monitoring_thread);
 
     for stream in tcp_listener.incoming() {
         if cancellation_token.is_cancelled() {
@@ -94,7 +99,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn crate_quotes_generator(
+fn run_quotes_generator(
     args: &args::Args,
     cancellation_token: Arc<ServerCancellationToken>,
 ) -> Result<(Receiver<Vec<StockQuote>>, JoinHandle<()>), std::io::Error> {
@@ -112,4 +117,11 @@ fn set_ctrlc_handler(cancellation_token: Arc<ServerCancellationToken>) {
         cancellation_token.cancel();
     })
     .expect("Error setting Ctrl-C handler");
+}
+
+fn run_monitoring(
+    udp_socket: Arc<UdpSocket>,
+    cancellation_token: Arc<ServerCancellationToken>,
+) -> JoinHandle<()> {
+    thread::spawn(move || start_monitoring(cancellation_token, udp_socket))
 }
