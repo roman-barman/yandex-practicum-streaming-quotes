@@ -1,13 +1,13 @@
 #![deny(unreachable_pub)]
 
-use std::io::Read;
 use crate::app::StockQuotesGenerator;
 use crate::tracing::initialize_tracing_subscribe;
 use ::tracing::{info, instrument, warn};
 use clap::Parser;
-use std::net::{IpAddr, Ipv4Addr, TcpListener, TcpStream};
-use rancor::Error;
 use quote_streaming::Commands;
+use rancor::Error;
+use std::io::Read;
+use std::net::{IpAddr, Ipv4Addr, TcpListener, TcpStream};
 
 mod app;
 mod args;

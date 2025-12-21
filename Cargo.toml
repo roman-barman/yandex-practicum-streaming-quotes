@@ -1,7 +1,8 @@
 [workspace]
 resolver = "2"
-members = ["quote-server", "quote-streaming"]
+members = ["quote-client","quote-server", "quote-streaming"]
 
 [workspace.dependencies]
 rkyv = "0.8"
 rancor = "0.1"
+clap = { version = "4", features = ["derive"] }
