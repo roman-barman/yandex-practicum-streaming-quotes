@@ -6,9 +6,10 @@ use ::tracing::{error, info, warn};
 use clap::Parser;
 use std::io::ErrorKind;
 use std::net::{IpAddr, Ipv4Addr, TcpListener};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 use std::thread;
+use std::thread::JoinHandle;
 use std::time::Duration;
 
 mod app;
@@ -24,14 +25,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .address
         .unwrap_or(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
 
-    let (is_generator_working, rx) = crate_quotes_generator(&args)?;
+    let mut threads = Vec::new();
+    let is_server_working = Arc::new(AtomicBool::new(true));
+    set_ctrlc_handler(Arc::clone(&is_server_working));
+
+    let (rx, generator_thread) = crate_quotes_generator(&args, Arc::clone(&is_server_working))?;
+    threads.push(generator_thread);
 
     let listener = TcpListener::bind((address, port))?;
     listener.set_nonblocking(true)?;
     info!("Listening on {}:{}", address, port);
 
     for stream in listener.incoming() {
-        if !is_generator_working.load(std::sync::atomic::Ordering::SeqCst) {
+        if !is_server_working.load(Ordering::SeqCst) {
             break;
         }
 
@@ -47,7 +53,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         };
 
-        thread::spawn(|| {
+        let handler_thread = thread::spawn(|| {
             let socket_addr = match stream.peer_addr() {
                 Ok(addr) => addr,
                 Err(e) => {
@@ -64,21 +70,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         });
+        threads.push(handler_thread);
     }
+
+    is_server_working.store(false, Ordering::SeqCst);
+
+    for thread in threads {
+        thread.join().expect("Failed to join thread");
+    }
+
+    info!("Server stopped");
 
     Ok(())
 }
 
 fn crate_quotes_generator(
     args: &args::Args,
-) -> Result<(Arc<AtomicBool>, mpsc::Receiver<Vec<StockQuote>>), std::io::Error> {
+    is_server_working: Arc<AtomicBool>,
+) -> Result<(mpsc::Receiver<Vec<StockQuote>>, JoinHandle<()>), std::io::Error> {
     let file = std::fs::File::open(&args.tickers_file)?;
     let generator = StockQuotesGenerator::read_from(file)?;
 
     let (tx, rx) = mpsc::channel::<Vec<StockQuote>>();
-    let working = Arc::new(AtomicBool::new(true));
-    let working_copy = Arc::clone(&working);
-    thread::spawn(move || quotes_generator(generator, tx, working_copy));
+    let thread = thread::spawn(move || quotes_generator(generator, tx, is_server_working));
 
-    Ok((working, rx))
+    Ok((rx, thread))
+}
+
+fn set_ctrlc_handler(is_server_working: Arc<AtomicBool>) {
+    ctrlc::set_handler(move || {
+        is_server_working.store(false, Ordering::SeqCst);
+    })
+    .expect("Error setting Ctrl-C handler");
 }

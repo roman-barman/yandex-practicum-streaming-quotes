@@ -9,15 +9,19 @@ use tracing::{error, info, instrument};
 pub(crate) fn quotes_generator(
     generator: StockQuotesGenerator,
     tx: std::sync::mpsc::Sender<Vec<StockQuote>>,
-    flag: Arc<AtomicBool>,
+    is_server_working: Arc<AtomicBool>,
 ) {
     loop {
+        if !is_server_working.load(std::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
+
         let quotes = generator.generate();
         match tx.send(quotes) {
             Ok(_) => info!("Quotes was generated and sent"),
             Err(_) => {
                 error!("Failed to send quotes");
-                flag.store(false, std::sync::atomic::Ordering::Relaxed);
+                is_server_working.store(false, std::sync::atomic::Ordering::SeqCst);
                 return;
             }
         }
