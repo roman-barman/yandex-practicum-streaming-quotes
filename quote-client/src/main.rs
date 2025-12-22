@@ -1,4 +1,4 @@
-use quote_streaming::{Commands, StockQuote};
+use quote_streaming::{Commands, KeepAlive, StockQuote};
 use rancor::Error;
 use std::io::Write;
 use std::net::{IpAddr, Ipv4Addr, TcpStream, UdpSocket};
@@ -27,8 +27,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         let mut buffer = [0; 1024];
         let len = socket.recv(&mut buffer)?;
-        let quote = rkyv::from_bytes::<StockQuote, rancor::Error>(&buffer[..len])?;
-        println!("{}", quote);
+        let quote_message = rkyv::from_bytes::<StockQuote, rancor::Error>(&buffer[..len]);
+        if let Ok(quote) = quote_message {
+            println!("{}", quote);
+        }
+
+        let keep_alive = rkyv::from_bytes::<KeepAlive, rancor::Error>(&buffer[..len]);
+        if let Ok(KeepAlive::Pong) = keep_alive {
+            println!("Received pong");
+        }
     }
 
     Ok(())

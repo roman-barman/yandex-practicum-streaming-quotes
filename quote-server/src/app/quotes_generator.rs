@@ -11,11 +11,11 @@ use tracing::{error, instrument, trace};
 pub(crate) fn run_quotes_generator(
     tickers: Vec<String>,
     cancellation_token: Arc<ServerCancellationToken>,
-) -> Result<(Receiver<StockQuote>, JoinHandle<()>), std::io::Error> {
+) -> (Receiver<StockQuote>, JoinHandle<()>) {
     let (tx, rx) = unbounded::<StockQuote>();
     let thread = thread::spawn(move || quotes_generator(tx, cancellation_token, tickers));
 
-    Ok((rx, thread))
+    (rx, thread)
 }
 
 #[instrument(name = "Generate quotes", skip_all)]

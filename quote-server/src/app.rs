@@ -4,7 +4,7 @@ mod quotes_generator;
 mod server_cancellation_token;
 
 use crate::app::handler::accept_connection;
-use crate::app::monitoring::start_monitoring;
+use crate::app::monitoring::run_monitoring;
 use crate::app::quotes_generator::run_quotes_generator;
 use crate::app::server_cancellation_token::ServerCancellationToken;
 use std::io::ErrorKind;
@@ -45,13 +45,13 @@ impl App {
 
         set_ctrlc_handler(Arc::clone(&self.cancellation_token));
 
-        let (rx, generator_thread) =
-            run_quotes_generator(self.tickers, Arc::clone(&self.cancellation_token))?;
+        let (quote_rx, generator_thread) =
+            run_quotes_generator(self.tickers, Arc::clone(&self.cancellation_token));
         self.threads.push(generator_thread);
 
-        let monitoring_thread = run_monitoring(
-            Arc::clone(&udp_socket),
+        let (monitoring_rx, monitoring_thread) = run_monitoring(
             Arc::clone(&self.cancellation_token),
+            Arc::clone(&udp_socket),
         );
         self.threads.push(monitoring_thread);
 
@@ -76,7 +76,8 @@ impl App {
                 stream,
                 Arc::clone(&self.cancellation_token),
                 Arc::clone(&udp_socket),
-                rx.clone(),
+                quote_rx.clone(),
+                monitoring_rx.clone(),
             ));
         }
 
@@ -90,13 +91,6 @@ impl App {
 
         Ok(())
     }
-}
-
-fn run_monitoring(
-    udp_socket: Arc<UdpSocket>,
-    cancellation_token: Arc<ServerCancellationToken>,
-) -> JoinHandle<()> {
-    thread::spawn(move || start_monitoring(cancellation_token, udp_socket))
 }
 
 fn set_ctrlc_handler(cancellation_token: Arc<ServerCancellationToken>) {

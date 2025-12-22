@@ -6,3 +6,4 @@ members = ["quote-client","quote-server", "quote-streaming"]
 rkyv = "0.8"
 rancor = "0.1"
 clap = { version = "4", features = ["derive"] }
+chrono = "0.4"
