@@ -1,14 +1,11 @@
 #![deny(unreachable_pub)]
 
 use crate::app::{
-    ServerCancellationToken, StockQuotesGenerator, handle_connection, quotes_generator,
-    start_monitoring,
+    ServerCancellationToken, handle_connection, run_quotes_generator, start_monitoring,
 };
 use crate::tracing::initialize_tracing_subscribe;
 use ::tracing::{error, info, warn};
 use clap::Parser;
-use crossbeam_channel::{Receiver, unbounded};
-use quote_streaming::StockQuote;
 use std::io::ErrorKind;
 use std::net::{IpAddr, Ipv4Addr, TcpListener, UdpSocket};
 use std::sync::Arc;
@@ -33,7 +30,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cancellation_token = Arc::new(ServerCancellationToken::default());
     set_ctrlc_handler(Arc::clone(&cancellation_token));
 
-    let (rx, generator_thread) = run_quotes_generator(&args, Arc::clone(&cancellation_token))?;
+    let file = std::fs::File::open(&args.tickers_file)?;
+    let (rx, generator_thread) = run_quotes_generator(file, Arc::clone(&cancellation_token))?;
     threads.push(generator_thread);
 
     let tcp_listener = TcpListener::bind((address, port))?;
@@ -97,19 +95,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Server stopped");
 
     Ok(())
-}
-
-fn run_quotes_generator(
-    args: &args::Args,
-    cancellation_token: Arc<ServerCancellationToken>,
-) -> Result<(Receiver<Vec<StockQuote>>, JoinHandle<()>), std::io::Error> {
-    let file = std::fs::File::open(&args.tickers_file)?;
-    let generator = StockQuotesGenerator::read_from(file)?;
-
-    let (tx, rx) = unbounded::<Vec<StockQuote>>();
-    let thread = thread::spawn(move || quotes_generator(generator, tx, cancellation_token));
-
-    Ok((rx, thread))
 }
 
 fn set_ctrlc_handler(cancellation_token: Arc<ServerCancellationToken>) {

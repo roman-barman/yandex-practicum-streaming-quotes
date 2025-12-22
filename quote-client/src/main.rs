@@ -27,10 +27,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         let mut buffer = [0; 1024];
         let len = socket.recv(&mut buffer)?;
-        let quotes = rkyv::from_bytes::<Vec<StockQuote>, rancor::Error>(&buffer[..len])?;
-        for quote in quotes {
-            println!("{}", quote);
-        }
+        let quote = rkyv::from_bytes::<StockQuote, rancor::Error>(&buffer[..len])?;
+        println!("{}", quote);
     }
 
     Ok(())

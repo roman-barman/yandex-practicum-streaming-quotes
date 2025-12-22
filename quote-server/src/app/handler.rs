@@ -13,7 +13,7 @@ pub(crate) fn handle_connection<R: Read>(
     mut reader: R,
     cancellation_token: Arc<ServerCancellationToken>,
     udp_socket: Arc<UdpSocket>,
-    rx: Receiver<Vec<StockQuote>>,
+    rx: Receiver<StockQuote>,
 ) -> Result<(), HandlerError> {
     let mut buffer = [0; 1024];
     let len = reader.read(&mut buffer)?;
@@ -36,7 +36,7 @@ pub(crate) fn handle_connection<R: Read>(
 fn stream_quotes(
     cancellation_token: Arc<ServerCancellationToken>,
     udp_socket: Arc<UdpSocket>,
-    rx: Receiver<Vec<StockQuote>>,
+    rx: Receiver<StockQuote>,
     tickers: Vec<String>,
     port: u16,
     address: std::net::IpAddr,
@@ -46,14 +46,12 @@ fn stream_quotes(
             return Ok(());
         }
         match rx.try_recv() {
-            Ok(quotes) => {
+            Ok(quote) => {
                 trace!("Received quotes");
-                let quotes_to_send = quotes
-                    .into_iter()
-                    .filter(|quote| tickers.iter().any(|ticker| ticker == quote.ticker()))
-                    .collect::<Vec<_>>();
-                let quotes_bytes = rkyv::to_bytes::<rancor::Error>(&quotes_to_send)?;
-                udp_socket.send_to(&quotes_bytes, (address, port))?;
+                if tickers.iter().any(|ticker| ticker == quote.ticker()) {
+                    let quotes_bytes = rkyv::to_bytes::<rancor::Error>(&quote)?;
+                    udp_socket.send_to(&quotes_bytes, (address, port))?;
+                }
             }
             Err(crossbeam_channel::TryRecvError::Empty) => {
                 thread::sleep(Duration::from_millis(50));
