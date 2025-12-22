@@ -1,10 +1,10 @@
 #![deny(unreachable_pub)]
 
 use crate::app::{
-    ServerCancellationToken, handle_connection, run_quotes_generator, start_monitoring,
+    ServerCancellationToken, accept_connection, run_quotes_generator, start_monitoring,
 };
 use crate::tracing::initialize_tracing_subscribe;
-use ::tracing::{error, info, warn};
+use ::tracing::{error, info};
 use clap::Parser;
 use std::io::ErrorKind;
 use std::net::{IpAddr, Ipv4Addr, TcpListener, UdpSocket};
@@ -62,28 +62,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 break;
             }
         };
-        let cancellation_token_copy = Arc::clone(&cancellation_token);
-        let udp_socket_copy = Arc::clone(&udp_socket);
-        let rx_copy = rx.clone();
 
-        let handler_thread = thread::spawn(|| {
-            let socket_addr = match stream.peer_addr() {
-                Ok(addr) => addr,
-                Err(e) => {
-                    warn!("Failed to get peer address: {}", e);
-                    return;
-                }
-            };
-            info!("Accepted connection from {}", socket_addr);
-
-            match handle_connection(stream, cancellation_token_copy, udp_socket_copy, rx_copy) {
-                Ok(()) => info!("Connection closed for {}", socket_addr),
-                Err(e) => {
-                    warn!("{}", e);
-                }
-            }
-        });
-        threads.push(handler_thread);
+        threads.push(accept_connection(
+            stream,
+            Arc::clone(&cancellation_token),
+            Arc::clone(&udp_socket),
+            rx.clone(),
+        ));
     }
 
     cancellation_token.cancel();
