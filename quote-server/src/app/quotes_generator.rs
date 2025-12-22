@@ -1,7 +1,6 @@
 use crate::app::server_cancellation_token::ServerCancellationToken;
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use quote_streaming::StockQuote;
-use std::io::{BufRead, BufReader, Read};
 use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
@@ -9,16 +8,10 @@ use std::time::Duration;
 use tracing::{error, instrument, trace};
 
 #[instrument(name = "Run quotes generator", skip_all)]
-pub(crate) fn run_quotes_generator<R: Read>(
-    reader: R,
+pub(crate) fn run_quotes_generator(
+    tickers: Vec<String>,
     cancellation_token: Arc<ServerCancellationToken>,
 ) -> Result<(Receiver<StockQuote>, JoinHandle<()>), std::io::Error> {
-    let buffer = BufReader::new(reader);
-    let mut tickers = Vec::new();
-    for line in buffer.lines() {
-        tickers.push(line?.trim().to_string());
-    }
-
     let (tx, rx) = unbounded::<StockQuote>();
     let thread = thread::spawn(move || quotes_generator(tx, cancellation_token, tickers));
 
