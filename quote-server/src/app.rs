@@ -1,95 +1,133 @@
 mod handler;
+mod listen;
 mod monitoring;
 mod quotes_generator;
 mod server_cancellation_token;
 
-use crate::app::handler::accept_connection;
+use crate::app::listen::run_listening;
 use crate::app::monitoring::run_monitoring;
 use crate::app::quotes_generator::run_quotes_generator;
 use crate::app::server_cancellation_token::ServerCancellationToken;
-use std::io::ErrorKind;
+use crossbeam_channel::Receiver;
 use std::net::{IpAddr, TcpListener, UdpSocket};
 use std::sync::Arc;
-use std::thread;
 use std::thread::JoinHandle;
-use std::time::Duration;
-use tracing::{error, info};
+use tracing::{info, trace};
 
 pub(super) struct App {
-    address: IpAddr,
-    port: u16,
     threads: Vec<JoinHandle<()>>,
     cancellation_token: Arc<ServerCancellationToken>,
-    tickers: Vec<String>,
 }
 
 impl App {
-    pub(super) fn new(address: IpAddr, port: u16, tickers: Vec<String>) -> Self {
+    pub(super) fn new() -> Self {
         Self {
-            address,
-            port,
             threads: Vec::new(),
             cancellation_token: Arc::new(ServerCancellationToken::default()),
-            tickers,
         }
     }
 
-    pub(super) fn run(mut self) -> Result<(), std::io::Error> {
-        let tcp_listener = TcpListener::bind((self.address, self.port))?;
+    pub(super) fn run(
+        mut self,
+        address: IpAddr,
+        port: u16,
+        tickers: Vec<String>,
+    ) -> Result<(), std::io::Error> {
+        let tcp_listener = TcpListener::bind((address, port))?;
         tcp_listener.set_nonblocking(true)?;
 
-        let udp_socket = Arc::new(UdpSocket::bind((self.address, self.port))?);
+        let udp_socket = Arc::new(UdpSocket::bind((address, port))?);
         udp_socket.set_nonblocking(true)?;
-
-        info!("Listening on {}:{}", self.address, self.port);
 
         set_ctrlc_handler(Arc::clone(&self.cancellation_token));
 
-        let (quote_rx, generator_thread) =
-            run_quotes_generator(self.tickers, Arc::clone(&self.cancellation_token));
-        self.threads.push(generator_thread);
-
-        let (monitoring_rx, monitoring_thread) = run_monitoring(
-            Arc::clone(&self.cancellation_token),
+        let monitoring_rx = self.run_monitoring(Arc::clone(&udp_socket));
+        let quote_rx = self.run_quotes_generator(tickers);
+        let thread_rx = self.run_listening(
+            tcp_listener,
             Arc::clone(&udp_socket),
+            quote_rx,
+            monitoring_rx,
         );
-        self.threads.push(monitoring_thread);
 
-        for stream in tcp_listener.incoming() {
-            if self.cancellation_token.is_cancelled() {
-                break;
-            }
-
-            let stream = match stream {
-                Ok(stream) => stream,
-                Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
-                    thread::sleep(Duration::from_millis(100));
-                    continue;
-                }
-                Err(e) => {
-                    error!("Failed to accept connection: {}", e);
-                    break;
-                }
-            };
-
-            self.threads.push(accept_connection(
-                stream,
-                Arc::clone(&self.cancellation_token),
-                Arc::clone(&udp_socket),
-                quote_rx.clone(),
-                monitoring_rx.clone(),
-            ));
-        }
-
-        self.cancellation_token.cancel();
-
-        for thread in self.threads {
-            thread.join().expect("Failed to join thread");
-        }
+        self.check_treads(thread_rx);
 
         info!("Server stopped");
 
         Ok(())
+    }
+
+    fn check_treads(mut self, thread_rx: Receiver<JoinHandle<()>>) {
+        loop {
+            if self.cancellation_token.is_cancelled() {
+                break;
+            }
+
+            match thread_rx.try_recv() {
+                Ok(thread) => self.threads.push(thread),
+                Err(crossbeam_channel::TryRecvError::Empty) => {
+                    std::thread::sleep(std::time::Duration::from_millis(100))
+                }
+                Err(crossbeam_channel::TryRecvError::Disconnected) => {
+                    self.cancellation_token.cancel();
+                    break;
+                }
+            }
+
+            let mut threads_to_delete = vec![];
+
+            for (i, thread) in self.threads.iter().enumerate() {
+                if thread.is_finished() {
+                    threads_to_delete.push(i);
+                }
+            }
+
+            for i in threads_to_delete.into_iter().rev() {
+                let thread = self.threads.swap_remove(i);
+                trace!("Joining thread");
+                thread.join().expect("Failed to join thread");
+            }
+        }
+
+        for (i, thread) in self.threads.into_iter().enumerate() {
+            trace!("Waiting for thread {} to finish", i);
+            thread.join().expect("Failed to join thread");
+        }
+    }
+
+    fn run_monitoring(&mut self, udp_socket: Arc<UdpSocket>) -> Receiver<(IpAddr, u16)> {
+        let (monitoring_rx, monitoring_thread) =
+            run_monitoring(Arc::clone(&self.cancellation_token), udp_socket);
+        self.threads.push(monitoring_thread);
+        monitoring_rx
+    }
+
+    fn run_quotes_generator(
+        &mut self,
+        tickers: Vec<String>,
+    ) -> Receiver<quote_streaming::StockQuote> {
+        let (quote_rx, generator_thread) =
+            run_quotes_generator(tickers, Arc::clone(&self.cancellation_token));
+        self.threads.push(generator_thread);
+        quote_rx
+    }
+
+    fn run_listening(
+        &mut self,
+        tcp_listener: TcpListener,
+        udp_socket: Arc<UdpSocket>,
+        quote_rx: Receiver<quote_streaming::StockQuote>,
+        monitoring_rx: Receiver<(IpAddr, u16)>,
+    ) -> Receiver<JoinHandle<()>> {
+        let (thread_rx, listen_thread) = run_listening(
+            tcp_listener,
+            Arc::clone(&self.cancellation_token),
+            udp_socket,
+            quote_rx,
+            monitoring_rx,
+        );
+        self.threads.push(listen_thread);
+        thread_rx
     }
 }
 

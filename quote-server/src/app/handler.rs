@@ -1,14 +1,14 @@
 use crate::app::ServerCancellationToken;
 use crate::app::handler::connection_handler::handle_connection;
-use crossbeam_channel::Receiver;
+use crossbeam_channel::{Receiver, Sender};
 use quote_streaming::StockQuote;
 use std::net::{IpAddr, TcpStream, UdpSocket};
 use std::sync::Arc;
 use std::thread;
+use std::thread::JoinHandle;
 use tracing::{info, instrument, warn};
 
 mod connection_handler;
-mod error;
 mod stream_quotes;
 
 #[instrument(name = "Accept connection", skip_all)]
@@ -18,8 +18,11 @@ pub(crate) fn accept_connection(
     udp_socket: Arc<UdpSocket>,
     quote_rx: Receiver<StockQuote>,
     monitoring_rx: Receiver<(IpAddr, u16)>,
-) -> thread::JoinHandle<()> {
-    thread::spawn(|| {
+    thread_tx: Sender<JoinHandle<()>>,
+) {
+    let thread_tx_copy = thread_tx.clone();
+    let ctx = Arc::clone(&cancellation_token);
+    let thread = thread::spawn(|| {
         let socket_addr = match stream.peer_addr() {
             Ok(addr) => addr,
             Err(e) => {
@@ -29,17 +32,18 @@ pub(crate) fn accept_connection(
         };
         info!("Accepted connection from {}", socket_addr);
 
-        match handle_connection(
+        handle_connection(
             stream,
-            cancellation_token,
+            ctx,
             udp_socket,
             quote_rx,
             monitoring_rx,
-        ) {
-            Ok(()) => info!("Connection closed for {}", socket_addr),
-            Err(e) => {
-                warn!("{}", e);
-            }
-        }
-    })
+            thread_tx_copy,
+        );
+        info!("Connection closed for {}", socket_addr)
+    });
+    if let Err(e) = thread_tx.send(thread) {
+        warn!("Failed to send thread handle: {}", e);
+        cancellation_token.cancel();
+    }
 }
