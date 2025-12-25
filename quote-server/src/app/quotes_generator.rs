@@ -7,13 +7,17 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 use tracing::{error, instrument, trace};
 
+const DEFAULT_GENERATION_INTERVAL: Duration = Duration::from_secs(3);
+
 #[instrument(name = "Run quotes generator", skip_all)]
 pub(crate) fn run_quotes_generator(
     tickers: Vec<String>,
     cancellation_token: Arc<ServerCancellationToken>,
 ) -> (Receiver<StockQuote>, JoinHandle<()>) {
     let (tx, rx) = unbounded::<StockQuote>();
-    let thread = thread::spawn(move || quotes_generator(tx, cancellation_token, tickers));
+    let thread = thread::spawn(move || {
+        quotes_generator(tx, cancellation_token, tickers, DEFAULT_GENERATION_INTERVAL)
+    });
 
     (rx, thread)
 }
@@ -23,13 +27,13 @@ fn quotes_generator(
     tx: Sender<StockQuote>,
     cancellation_token: Arc<ServerCancellationToken>,
     tickers: Vec<String>,
+    interval: Duration,
 ) {
-    loop {
-        if cancellation_token.is_cancelled() {
-            return;
-        }
-
+    while !cancellation_token.is_cancelled() {
         for ticker in tickers.iter() {
+            if cancellation_token.is_cancelled() {
+                return;
+            }
             let quote = StockQuote::generate(ticker);
             match tx.send(quote) {
                 Ok(_) => trace!("Quote {} was generated and sent", ticker),
@@ -40,7 +44,6 @@ fn quotes_generator(
                 }
             }
         }
-
-        thread::sleep(Duration::from_secs(3));
+        thread::sleep(interval);
     }
 }
