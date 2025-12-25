@@ -1,10 +1,9 @@
 use crate::app::ServerCancellationToken;
 use chrono::Local;
-use crossbeam_channel::Receiver;
+use crossbeam_channel::{Receiver, select};
 use quote_streaming::StockQuote;
 use std::net::{IpAddr, UdpSocket};
 use std::sync::Arc;
-use std::thread;
 use std::time::Duration;
 use tracing::{info, instrument, trace, warn};
 
@@ -20,55 +19,56 @@ pub(super) fn stream_quotes(
 ) {
     let mut last_ping_time = Local::now().timestamp();
     loop {
-        if cancellation_token.is_cancelled() {
-            break;
-        }
-
-        if Local::now().timestamp() - last_ping_time > 5 {
-            info!(
-                "Last ping for {}:{} was more than 5 seconds ago, stop streaming quotes",
-                address, port
-            );
-            break;
-        }
-
-        match quote_rx.try_recv() {
-            Ok(quote) => {
-                trace!("Received quotes");
-                if tickers.iter().any(|ticker| ticker == quote.ticker()) {
-                    let Ok(quotes_bytes) = rkyv::to_bytes::<rancor::Error>(&quote) else {
-                        warn!("Failed to serialize quote: {:?}", quote);
+        select! {
+            recv(quote_rx) -> msg => {
+                match msg {
+                    Ok(quote) => {
+                        trace!("Received quotes");
+                        if tickers.iter().any(|ticker| ticker == quote.ticker()) {
+                            let Ok(quotes_bytes) = rkyv::to_bytes::<rancor::Error>(&quote) else {
+                                warn!("Failed to serialize quote: {:?}", quote);
+                                cancellation_token.cancel();
+                                break;
+                            };
+                            if let Err(e) = udp_socket.send_to(&quotes_bytes, (address, port)) {
+                                warn!("Failed to send quote: {}", e);
+                                break;
+                            };
+                        }
+                    },
+                    Err(_) => {
+                        warn!("Quotes receiver disconnected");
                         cancellation_token.cancel();
                         break;
-                    };
-                    if let Err(e) = udp_socket.send_to(&quotes_bytes, (address, port)) {
-                        warn!("Failed to send quote: {}", e);
+                    }
+                }
+            }
+            recv(monitoring_rx) -> msg => {
+                match msg {
+                    Ok((ping_address, ping_port)) => {
+                        if address == ping_address && port == ping_port {
+                            last_ping_time = Local::now().timestamp();
+                        }
+                    }
+                    Err(_) => {
+                        warn!("Monitoring receiver disconnected");
+                        cancellation_token.cancel();
                         break;
-                    };
+                    }
                 }
             }
-            Err(crossbeam_channel::TryRecvError::Empty) => {
-                thread::sleep(Duration::from_millis(50));
-            }
-            Err(crossbeam_channel::TryRecvError::Disconnected) => {
-                warn!("Quotes receiver disconnected");
-                cancellation_token.cancel();
-                break;
-            }
-        }
-
-        match monitoring_rx.try_recv() {
-            Ok((ping_address, ping_port)) => {
-                if address == ping_address && port == ping_port {
-                    last_ping_time = Local::now().timestamp();
+            default(Duration::from_millis(100)) => {
+                if cancellation_token.is_cancelled() {
+                    break;
+                }
+                if Local::now().timestamp() - last_ping_time > 5 {
+                    info!(
+                        "Last ping for {}:{} was more than 5 seconds ago, stop streaming quotes",
+                        address, port
+                    );
+                    break;
                 }
             }
-            Err(crossbeam_channel::TryRecvError::Disconnected) => {
-                warn!("Quotes receiver disconnected");
-                cancellation_token.cancel();
-                break;
-            }
-            Err(crossbeam_channel::TryRecvError::Empty) => {}
         }
     }
 }
