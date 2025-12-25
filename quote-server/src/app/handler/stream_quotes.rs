@@ -1,10 +1,9 @@
 use crate::app::ServerCancellationToken;
-use chrono::Local;
 use crossbeam_channel::{Receiver, select};
 use quote_streaming::StockQuote;
 use std::net::{IpAddr, UdpSocket};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tracing::{info, instrument, trace, warn};
 
 #[instrument(name = "Stream quotes", skip(cancellation_token, udp_socket, quote_rx, monitoring_rx), fields(tickers = ?tickers, port, address))]
@@ -17,7 +16,9 @@ pub(super) fn stream_quotes(
     port: u16,
     address: IpAddr,
 ) {
-    let mut last_ping_time = Local::now().timestamp();
+    let mut last_ping_time = Instant::now();
+    let timeout_duration = Duration::from_secs(5);
+
     loop {
         select! {
             recv(quote_rx) -> msg => {
@@ -47,7 +48,7 @@ pub(super) fn stream_quotes(
                 match msg {
                     Ok((ping_address, ping_port)) => {
                         if address == ping_address && port == ping_port {
-                            last_ping_time = Local::now().timestamp();
+                            last_ping_time = Instant::now();
                         }
                     }
                     Err(_) => {
@@ -61,7 +62,7 @@ pub(super) fn stream_quotes(
                 if cancellation_token.is_cancelled() {
                     break;
                 }
-                if Local::now().timestamp() - last_ping_time > 5 {
+                if last_ping_time.elapsed() > timeout_duration {
                     info!(
                         "Last ping for {}:{} was more than 5 seconds ago, stop streaming quotes",
                         address, port
