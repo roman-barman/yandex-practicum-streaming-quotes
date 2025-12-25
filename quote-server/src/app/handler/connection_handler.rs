@@ -44,7 +44,7 @@ pub(super) fn handle_connection<R: Read>(
                     udp_socket,
                     quote_rx,
                     monitoring_rx,
-                    ticker,
+                    ticker.into_iter().collect(),
                     port,
                     address,
                 )

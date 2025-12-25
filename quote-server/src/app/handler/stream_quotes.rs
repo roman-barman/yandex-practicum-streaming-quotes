@@ -1,6 +1,7 @@
 use crate::app::ServerCancellationToken;
-use crossbeam_channel::{Receiver, select};
+use crossbeam_channel::{Receiver, select_biased};
 use quote_streaming::StockQuote;
+use std::collections::HashSet;
 use std::net::{IpAddr, UdpSocket};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -12,7 +13,7 @@ pub(super) fn stream_quotes(
     udp_socket: Arc<UdpSocket>,
     quote_rx: Receiver<StockQuote>,
     monitoring_rx: Receiver<(IpAddr, u16)>,
-    tickers: Vec<String>,
+    tickers: HashSet<String>,
     port: u16,
     address: IpAddr,
 ) {
@@ -20,12 +21,26 @@ pub(super) fn stream_quotes(
     let timeout_duration = Duration::from_secs(5);
 
     loop {
-        select! {
+        select_biased! {
+            recv(monitoring_rx) -> msg => {
+                match msg {
+                    Ok((ping_address, ping_port)) => {
+                        if address == ping_address && port == ping_port {
+                            last_ping_time = Instant::now();
+                        }
+                    }
+                    Err(_) => {
+                        warn!("Monitoring receiver disconnected");
+                        cancellation_token.cancel();
+                        break;
+                    }
+                }
+            }
             recv(quote_rx) -> msg => {
                 match msg {
                     Ok(quote) => {
                         trace!("Received quotes");
-                        if tickers.iter().any(|ticker| ticker == quote.ticker()) {
+                        if tickers.contains(quote.ticker()) {
                             let Ok(quotes_bytes) = rkyv::to_bytes::<rancor::Error>(&quote) else {
                                 warn!("Failed to serialize quote: {:?}", quote);
                                 cancellation_token.cancel();
@@ -39,20 +54,6 @@ pub(super) fn stream_quotes(
                     },
                     Err(_) => {
                         warn!("Quotes receiver disconnected");
-                        cancellation_token.cancel();
-                        break;
-                    }
-                }
-            }
-            recv(monitoring_rx) -> msg => {
-                match msg {
-                    Ok((ping_address, ping_port)) => {
-                        if address == ping_address && port == ping_port {
-                            last_ping_time = Instant::now();
-                        }
-                    }
-                    Err(_) => {
-                        warn!("Monitoring receiver disconnected");
                         cancellation_token.cancel();
                         break;
                     }
