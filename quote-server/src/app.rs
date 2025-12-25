@@ -38,6 +38,7 @@ impl App {
 
         let udp_socket = Arc::new(UdpSocket::bind((address, port))?);
         udp_socket.set_nonblocking(true)?;
+        udp_socket.set_read_timeout(Some(std::time::Duration::from_millis(500)))?;
 
         set_ctrlc_handler(Arc::clone(&self.cancellation_token));
 

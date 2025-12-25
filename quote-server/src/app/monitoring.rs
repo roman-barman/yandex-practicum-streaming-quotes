@@ -6,7 +6,6 @@ use std::net::{IpAddr, UdpSocket};
 use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
-use std::time::Duration;
 use tracing::{error, instrument, trace, warn};
 
 #[instrument(name = "Run monitoring", skip_all)]
@@ -68,8 +67,8 @@ fn monitoring(
                     Err(e) => warn!("Failed to deserialize keep alive message: {}", e),
                 }
             }
-            Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
-                thread::sleep(Duration::from_millis(500));
+            Err(ref e) if e.kind() == ErrorKind::WouldBlock || e.kind() == ErrorKind::TimedOut => {
+                continue;
             }
             Err(e) => error!("Failed to receive keep alive message: {}", e),
         }
