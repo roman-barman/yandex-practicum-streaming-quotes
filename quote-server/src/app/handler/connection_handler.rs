@@ -20,14 +20,19 @@ pub(super) fn handle_connection<R: Read>(
     thread_tx: Sender<JoinHandle<()>>,
 ) {
     let mut buffer = [0; 1024];
-    let Ok(len) = reader.read(&mut buffer) else {
-        warn!("Failed to read from connection");
-        return;
+    let len = match reader.read(&mut buffer) {
+        Ok(len) => len,
+        Err(e) => {
+            warn!("Failed to read from connection: {}", e);
+            return;
+        }
     };
-
-    let Ok(command) = rkyv::from_bytes::<Commands, rancor::Error>(&buffer[..len]) else {
-        warn!("Failed to deserialize command");
-        return;
+    let command = match rkyv::from_bytes::<Commands, rancor::Error>(&buffer[..len]) {
+        Ok(command) => command,
+        Err(e) => {
+            warn!("Failed to deserialize command: {}", e);
+            return;
+        }
     };
     info!("Received command: {:?}", command);
 
