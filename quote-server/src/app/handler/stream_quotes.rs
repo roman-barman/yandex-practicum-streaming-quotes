@@ -25,6 +25,7 @@ pub(super) fn stream_quotes(
             recv(monitoring_rx) -> msg => {
                 match msg {
                     Ok((ping_address, ping_port)) => {
+                        info!("Received ping from {}:{}, current address: {}:{}", ping_address, ping_port, address, port);
                         if address == ping_address && port == ping_port {
                             last_ping_time = Instant::now();
                         }

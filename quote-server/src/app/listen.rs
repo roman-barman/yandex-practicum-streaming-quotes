@@ -8,7 +8,9 @@ use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
-use tracing::{error, info, instrument};
+use tracing::{error, info, instrument, warn};
+
+const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 #[instrument(name = "Run listening", skip_all)]
 pub(crate) fn run_listening(
@@ -56,12 +58,12 @@ fn listen(
         let stream = match stream {
             Ok(stream) => stream,
             Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
-                thread::sleep(Duration::from_millis(100));
+                thread::sleep(POLL_INTERVAL);
                 continue;
             }
             Err(e) => {
-                error!("Failed to accept connection: {}", e);
-                break;
+                warn!("Failed to accept connection: {}", e);
+                continue;
             }
         };
 

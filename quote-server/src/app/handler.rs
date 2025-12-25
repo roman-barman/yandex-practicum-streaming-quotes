@@ -22,16 +22,15 @@ pub(crate) fn accept_connection(
 ) {
     let thread_tx_copy = thread_tx.clone();
     let ctx = Arc::clone(&cancellation_token);
-    let thread = thread::spawn(|| {
-        let socket_addr = match stream.peer_addr() {
-            Ok(addr) => addr,
-            Err(e) => {
-                warn!("Failed to get peer address: {}", e);
-                return;
-            }
-        };
+    let socket_addr = match stream.peer_addr() {
+        Ok(addr) => addr,
+        Err(e) => {
+            warn!("Failed to get peer address: {}", e);
+            return;
+        }
+    };
+    let thread = thread::spawn(move || {
         info!("Accepted connection from {}", socket_addr);
-
         handle_connection(
             stream,
             ctx,
