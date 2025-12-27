@@ -1,7 +1,7 @@
 use crate::app::ServerCancellationToken;
 use crate::app::client_address::ClientAddress;
 use crate::app::monitoring_router::MonitoringRouter;
-use quote_streaming::KeepAlive;
+use quote_streaming::{Request, Response};
 use std::io::ErrorKind;
 use std::net::UdpSocket;
 use std::sync::Arc;
@@ -24,10 +24,20 @@ fn monitoring(
     udp_socket: Arc<UdpSocket>,
     router: Arc<MonitoringRouter>,
 ) {
-    let pong = match rkyv::to_bytes::<rancor::Error>(&KeepAlive::Pong) {
+    let pong = match rkyv::to_bytes::<rancor::Error>(&Response::Pong) {
         Ok(bytes) => bytes,
         Err(err) => {
             error!("Failed to serialize pong message: {}", err);
+            return;
+        }
+    };
+
+    let error_response = match rkyv::to_bytes::<rancor::Error>(&Response::Error(
+        "Invalid request. Expected PING".to_string(),
+    )) {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            error!("Failed to serialize error message: {}", err);
             return;
         }
     };
@@ -40,16 +50,13 @@ fn monitoring(
 
         match udp_socket.recv_from(&mut buffer) {
             Ok((size, address)) => {
-                let keep_alive = rkyv::from_bytes::<KeepAlive, rancor::Error>(&buffer[..size]);
-                match keep_alive {
-                    Ok(KeepAlive::Ping) => {
+                let request = rkyv::from_bytes::<Request, rancor::Error>(&buffer[..size]);
+                match request {
+                    Ok(Request::Ping) => {
                         trace!("Received ping from {}", address);
-                        match udp_socket.send_to(&pong, address) {
-                            Ok(_) => {}
-                            Err(e) => {
-                                error!("Failed to send pong to {}: {}", address, e);
-                                continue;
-                            }
+                        if let Err(e) = udp_socket.send_to(&pong, address) {
+                            warn!("Failed to send pong to {}: {}", address, e);
+                            continue;
                         }
 
                         let ip_address = address.ip();
@@ -59,7 +66,12 @@ fn monitoring(
                             warn!("Failed to send ping to monitoring router: {}", e);
                         }
                     }
-                    Ok(KeepAlive::Pong) => warn!("Received pong from {}", address),
+                    Ok(_) => {
+                        warn!("Received invalid request from {}", address);
+                        if let Err(e) = udp_socket.send_to(&error_response, address) {
+                            warn!("Failed to send error response to {}: {}", address, e);
+                        }
+                    }
                     Err(e) => warn!("Failed to deserialize keep alive message: {}", e),
                 }
             }

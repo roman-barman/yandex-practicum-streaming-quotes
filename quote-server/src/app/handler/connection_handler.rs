@@ -4,13 +4,13 @@ use crate::app::handler::stream_quotes::{StreamQuotesContext, stream_quotes};
 use crate::app::monitoring_router::MonitoringRouter;
 use crate::app::tickers_router::TickersRouter;
 use crossbeam_channel::Sender;
-use quote_streaming::{Commands, StockQuote};
-use std::io::Read;
+use quote_streaming::{Request, Response, StockQuote};
+use std::io::{Read, Write};
 use std::net::{IpAddr, UdpSocket};
 use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
-use tracing::{info, instrument};
+use tracing::{error, info, instrument};
 use tracing_log::log::warn;
 
 pub(crate) struct ConnectionHandlerContext {
@@ -40,27 +40,38 @@ impl ConnectionHandlerContext {
 }
 
 #[instrument(name = "Handle connection", skip_all)]
-pub(super) fn handle_connection<R: Read>(
-    mut reader: R,
+pub(super) fn handle_connection<R: Read + Write>(
+    mut stream: R,
     context: ConnectionHandlerContext,
 ) -> Option<ClientAddress> {
-    let command = match read_command(&mut reader) {
-        Ok(command) => {
-            info!("Received command: {:?}", command);
-            command
+    let request = match read_request(&mut stream) {
+        Ok(request) => {
+            info!("Received request: {:?}", request);
+            request
+        }
+        Err(ReadRequestError::InvalidRequest(e)) => {
+            warn!("Invalid request: {}", e);
+            let response = Response::Error("Invalid request".to_string());
+            send_response_safe(&mut stream, &response, &context);
+            return None;
         }
         Err(e) => {
-            warn!("Failed to read command: {}", e);
+            warn!("Failed to read request: {}", e);
             return None;
         }
     };
 
-    match command {
-        Commands::Stream {
+    match request {
+        Request::StreamTickers {
             ticker,
             port,
             address,
         } => start_stream_quotes(address, port, ticker, context),
+        Request::Ping => {
+            let response = Response::Error("Unexpected request".to_string());
+            send_response_safe(&mut stream, &response, &context);
+            None
+        }
     }
 }
 
@@ -109,9 +120,47 @@ fn start_stream_quotes(
     None
 }
 
-fn read_command<R: Read>(mut reader: R) -> Result<Commands, Box<dyn std::error::Error>> {
+fn send_response_safe<W: Write>(
+    writer: &mut W,
+    response: &Response,
+    context: &ConnectionHandlerContext,
+) {
+    if let Err(e) = write_response(response, writer) {
+        match e {
+            WriteResponseError::Io(e) => warn!("Failed to write response: {}", e),
+            WriteResponseError::InvalidResponse(e) => {
+                error!("Failed to serialize response: {}", e);
+                context.cancellation_token.cancel();
+            }
+        }
+    }
+}
+
+fn read_request<R: Read>(mut reader: R) -> Result<Request, ReadRequestError> {
     let mut buffer = [0; 1024];
     let len = reader.read(&mut buffer)?;
-    let command = rkyv::from_bytes::<Commands, rancor::Error>(&buffer[..len])?;
+    let command = rkyv::from_bytes::<Request, rancor::Error>(&buffer[..len])?;
     Ok(command)
+}
+
+fn write_response<W: Write>(response: &Response, writer: &mut W) -> Result<(), WriteResponseError> {
+    let response = rkyv::to_bytes::<rancor::Error>(response)?;
+    writer.write_all(&response)?;
+    Ok(())
+}
+
+#[derive(Debug, thiserror::Error)]
+enum ReadRequestError {
+    #[error("Failed to read request: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("Failed to deserialize request: {0}")]
+    InvalidRequest(#[from] rancor::Error),
+}
+
+#[derive(Debug, thiserror::Error)]
+enum WriteResponseError {
+    #[error("Failed to write response: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("Failed to serialize response: {0}")]
+    InvalidResponse(#[from] rancor::Error),
 }

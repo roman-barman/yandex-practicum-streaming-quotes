@@ -1,8 +1,8 @@
 #![deny(unreachable_pub)]
-mod commands;
-mod keep_alive;
+mod request;
+mod response;
 mod stock_quote;
 
-pub use commands::Commands;
-pub use keep_alive::KeepAlive;
+pub use request::Request;
+pub use response::Response;
 pub use stock_quote::StockQuote;

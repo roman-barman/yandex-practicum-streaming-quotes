@@ -1,7 +1,7 @@
 use crate::app::ServerCancellationToken;
 use crate::app::client_address::ClientAddress;
 use crossbeam_channel::{Receiver, select_biased};
-use quote_streaming::StockQuote;
+use quote_streaming::{Response, StockQuote};
 use std::net::UdpSocket;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -57,7 +57,7 @@ pub(super) fn stream_quotes(context: StreamQuotesContext) -> Option<ClientAddres
                 match msg {
                     Ok(quote) => {
                         trace!("Received quotes {}", quote.ticker());
-                        let Ok(quotes_bytes) = rkyv::to_bytes::<rancor::Error>(&quote) else {
+                        let Ok(quotes_bytes) = rkyv::to_bytes::<rancor::Error>(&Response::Quote(quote.clone())) else {
                                 warn!("Failed to serialize quote: {:?}", quote);
                                 context.cancellation_token.cancel();
                                 break;
