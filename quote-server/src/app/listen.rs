@@ -1,9 +1,11 @@
+use crate::app::client_address::ClientAddress;
 use crate::app::handler::accept_connection;
+use crate::app::monitoring_router::MonitoringRouter;
 use crate::app::server_cancellation_token::ServerCancellationToken;
+use crate::app::tickers_router::TickersRouter;
 use crossbeam_channel::{Receiver, Sender};
-use quote_streaming::StockQuote;
 use std::io::ErrorKind;
-use std::net::{IpAddr, TcpListener, UdpSocket};
+use std::net::{TcpListener, UdpSocket};
 use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
@@ -17,17 +19,17 @@ pub(crate) fn run_listening(
     tcp_listener: TcpListener,
     cancellation_token: Arc<ServerCancellationToken>,
     udp_socket: Arc<UdpSocket>,
-    quote_rx: Receiver<StockQuote>,
-    monitoring_rx: Receiver<(IpAddr, u16)>,
-) -> (Receiver<JoinHandle<()>>, JoinHandle<()>) {
-    let (tx, rx) = crossbeam_channel::unbounded::<JoinHandle<()>>();
+    tickers_router: Arc<TickersRouter>,
+    monitoring_router: Arc<MonitoringRouter>,
+) -> (Receiver<JoinHandle<Option<ClientAddress>>>, JoinHandle<()>) {
+    let (tx, rx) = crossbeam_channel::unbounded::<JoinHandle<Option<ClientAddress>>>();
     let thread = thread::spawn(move || {
         listen(
             tcp_listener,
             cancellation_token,
             udp_socket,
-            quote_rx,
-            monitoring_rx,
+            tickers_router,
+            monitoring_router,
             tx,
         )
     });
@@ -39,9 +41,9 @@ fn listen(
     tcp_listener: TcpListener,
     cancellation_token: Arc<ServerCancellationToken>,
     udp_socket: Arc<UdpSocket>,
-    quote_rx: Receiver<StockQuote>,
-    monitoring_rx: Receiver<(IpAddr, u16)>,
-    thread_tx: Sender<JoinHandle<()>>,
+    tickers_router: Arc<TickersRouter>,
+    monitoring_router: Arc<MonitoringRouter>,
+    thread_tx: Sender<JoinHandle<Option<ClientAddress>>>,
 ) {
     let Ok(local_addr) = tcp_listener.local_addr() else {
         error!("Failed to get local address");
@@ -71,8 +73,8 @@ fn listen(
             stream,
             Arc::clone(&cancellation_token),
             Arc::clone(&udp_socket),
-            quote_rx.clone(),
-            monitoring_rx.clone(),
+            Arc::clone(&tickers_router),
+            Arc::clone(&monitoring_router),
             thread_tx.clone(),
         );
     }

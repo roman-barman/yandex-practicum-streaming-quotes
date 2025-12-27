@@ -1,8 +1,9 @@
 use crate::app::ServerCancellationToken;
-use crossbeam_channel::{Receiver, Sender, unbounded};
+use crate::app::client_address::ClientAddress;
+use crate::app::monitoring_router::MonitoringRouter;
 use quote_streaming::KeepAlive;
 use std::io::ErrorKind;
-use std::net::{IpAddr, UdpSocket};
+use std::net::UdpSocket;
 use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
@@ -12,17 +13,16 @@ use tracing::{error, instrument, trace, warn};
 pub(crate) fn run_monitoring(
     cancellation_token: Arc<ServerCancellationToken>,
     udp_socket: Arc<UdpSocket>,
-) -> (Receiver<(IpAddr, u16)>, JoinHandle<()>) {
-    let (tx, rx) = unbounded::<(IpAddr, u16)>();
-    let thread = thread::spawn(move || monitoring(cancellation_token, udp_socket, tx));
-    (rx, thread)
+    router: Arc<MonitoringRouter>,
+) -> JoinHandle<()> {
+    thread::spawn(move || monitoring(cancellation_token, udp_socket, router))
 }
 
 #[instrument(name = "Monitoring", skip_all)]
 fn monitoring(
     cancellation_token: Arc<ServerCancellationToken>,
     udp_socket: Arc<UdpSocket>,
-    tx: Sender<(IpAddr, u16)>,
+    router: Arc<MonitoringRouter>,
 ) {
     let pong = match rkyv::to_bytes::<rancor::Error>(&KeepAlive::Pong) {
         Ok(bytes) => bytes,
@@ -54,13 +54,9 @@ fn monitoring(
 
                         let ip_address = address.ip();
                         let port = address.port();
-                        match tx.send((ip_address, port)) {
-                            Ok(_) => {}
-                            Err(e) => {
-                                error!("Failed to send ping address to channel: {}", e);
-                                cancellation_token.cancel();
-                                return;
-                            }
+                        let address = ClientAddress::new(ip_address, port);
+                        if let Err(e) = router.send_ping(&address) {
+                            warn!("Failed to send ping to monitoring router: {}", e);
                         }
                     }
                     Ok(KeepAlive::Pong) => warn!("Received pong from {}", address),

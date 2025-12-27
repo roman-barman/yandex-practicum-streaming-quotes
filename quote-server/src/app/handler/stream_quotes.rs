@@ -1,22 +1,24 @@
 use crate::app::ServerCancellationToken;
+use crate::app::client_address::ClientAddress;
 use crossbeam_channel::{Receiver, select_biased};
 use quote_streaming::StockQuote;
-use std::collections::HashSet;
-use std::net::{IpAddr, UdpSocket};
+use std::net::UdpSocket;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{info, instrument, trace, warn};
 
-#[instrument(name = "Stream quotes", skip(cancellation_token, udp_socket, quote_rx, monitoring_rx), fields(tickers = ?tickers, port, address))]
+#[instrument(
+    name = "Stream quotes",
+    skip(cancellation_token, udp_socket, quote_rx, monitoring_rx),
+    fields(address)
+)]
 pub(super) fn stream_quotes(
     cancellation_token: Arc<ServerCancellationToken>,
     udp_socket: Arc<UdpSocket>,
     quote_rx: Receiver<StockQuote>,
-    monitoring_rx: Receiver<(IpAddr, u16)>,
-    tickers: HashSet<String>,
-    port: u16,
-    address: IpAddr,
-) {
+    monitoring_rx: Receiver<()>,
+    address: ClientAddress,
+) -> Option<ClientAddress> {
     let mut last_ping_time = Instant::now();
     let timeout_duration = Duration::from_secs(5);
 
@@ -24,11 +26,8 @@ pub(super) fn stream_quotes(
         select_biased! {
             recv(monitoring_rx) -> msg => {
                 match msg {
-                    Ok((ping_address, ping_port)) => {
-                        info!("Received ping from {}:{}, current address: {}:{}", ping_address, ping_port, address, port);
-                        if address == ping_address && port == ping_port {
-                            last_ping_time = Instant::now();
-                        }
+                    Ok(_) => {
+                        last_ping_time = Instant::now();
                     }
                     Err(_) => {
                         warn!("Monitoring receiver disconnected");
@@ -40,18 +39,16 @@ pub(super) fn stream_quotes(
             recv(quote_rx) -> msg => {
                 match msg {
                     Ok(quote) => {
-                        trace!("Received quotes");
-                        if tickers.contains(quote.ticker()) {
-                            let Ok(quotes_bytes) = rkyv::to_bytes::<rancor::Error>(&quote) else {
+                        trace!("Received quotes {}", quote.ticker());
+                        let Ok(quotes_bytes) = rkyv::to_bytes::<rancor::Error>(&quote) else {
                                 warn!("Failed to serialize quote: {:?}", quote);
                                 cancellation_token.cancel();
                                 break;
                             };
-                            if let Err(e) = udp_socket.send_to(&quotes_bytes, (address, port)) {
+                            if let Err(e) = udp_socket.send_to(&quotes_bytes, address.address()) {
                                 warn!("Failed to send quote: {}", e);
                                 break;
                             };
-                        }
                     },
                     Err(_) => {
                         warn!("Quotes receiver disconnected");
@@ -66,12 +63,14 @@ pub(super) fn stream_quotes(
                 }
                 if last_ping_time.elapsed() > timeout_duration {
                     info!(
-                        "Last ping for {}:{} was more than 5 seconds ago, stop streaming quotes",
-                        address, port
+                        "Last ping for {} was more than 5 seconds ago, stop streaming quotes",
+                        address
                     );
                     break;
                 }
             }
         }
     }
+
+    Some(address)
 }

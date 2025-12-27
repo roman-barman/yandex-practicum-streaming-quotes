@@ -43,7 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn send_ping(socket: Arc<UdpSocket>) {
     thread::spawn(move || {
-        let ping = rkyv::to_bytes::<Error>(&quote_streaming::KeepAlive::Ping).unwrap();
+        let ping = rkyv::to_bytes::<Error>(&KeepAlive::Ping).unwrap();
         loop {
             socket.send_to(&ping, ("127.0.0.1", 5152)).unwrap();
             thread::sleep(std::time::Duration::from_secs(5));
