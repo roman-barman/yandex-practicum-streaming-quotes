@@ -2,7 +2,7 @@ use crate::app::ServerCancellationToken;
 use crate::app::client_address::ClientAddress;
 use crate::app::handler::stream_quotes::{StreamQuotesContext, stream_quotes};
 use crate::app::monitoring_router::MonitoringRouter;
-use crate::app::tickers_router::{TickersRouter, TickersRouterError};
+use crate::app::tickers_router::TickersRouter;
 use crossbeam_channel::Sender;
 use quote_streaming::{Commands, StockQuote};
 use std::io::Read;
@@ -10,7 +10,7 @@ use std::net::{IpAddr, UdpSocket};
 use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
-use tracing::{error, info, instrument};
+use tracing::{info, instrument};
 use tracing_log::log::warn;
 
 pub(crate) struct ConnectionHandlerContext {
@@ -74,25 +74,11 @@ fn start_stream_quotes(
     let (quote_tx, quote_rx) = crossbeam_channel::unbounded::<StockQuote>();
     let (monitoring_tx, monitoring_rx) = crossbeam_channel::unbounded::<()>();
 
-    if let Err(e) = context.tickers_router.add_routes(
-        tickers
-            .iter()
-            .map(|t| t.as_str())
-            .collect::<Vec<_>>()
-            .as_slice(),
-        quote_tx,
-        client_address.clone(),
-    ) {
-        match e {
-            TickersRouterError::Unexpect => {
-                error!("Unexpected error from tickers router");
-                context.cancellation_token.cancel();
-            }
-            _ => {
-                warn!("Failed to add route: {}", e);
-            }
-        }
-
+    if let Err(e) = context
+        .tickers_router
+        .add_routes(tickers, quote_tx, client_address.clone())
+    {
+        warn!("Failed to add route: {}", e);
         return Some(client_address);
     }
 

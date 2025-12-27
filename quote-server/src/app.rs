@@ -52,13 +52,13 @@ impl App {
         udp_socket.set_nonblocking(true)?;
         udp_socket.set_read_timeout(Some(Duration::from_millis(500)))?;
 
-        let tickers_router = Arc::new(TickersRouter::new(tickers));
+        let tickers_router = Arc::new(TickersRouter::new());
         let monitoring_router = Arc::new(MonitoringRouter::default());
 
         set_ctrlc_handler(Arc::clone(&self.cancellation_token));
 
         self.run_monitoring(Arc::clone(&udp_socket), Arc::clone(&monitoring_router));
-        self.run_quotes_generator(Arc::clone(&tickers_router));
+        self.run_quotes_generator(Arc::clone(&tickers_router), tickers);
         let thread_rx = self.run_listening(
             tcp_listener,
             Arc::clone(&udp_socket),
@@ -147,9 +147,12 @@ impl App {
         self.service_threads.push(monitoring_thread);
     }
 
-    fn run_quotes_generator(&mut self, tickers_router: Arc<TickersRouter>) {
-        let generator_thread =
-            run_quotes_generator(tickers_router, Arc::clone(&self.cancellation_token));
+    fn run_quotes_generator(&mut self, tickers_router: Arc<TickersRouter>, tickers: Vec<String>) {
+        let generator_thread = run_quotes_generator(
+            tickers,
+            tickers_router,
+            Arc::clone(&self.cancellation_token),
+        );
         self.service_threads.push(generator_thread);
     }
 

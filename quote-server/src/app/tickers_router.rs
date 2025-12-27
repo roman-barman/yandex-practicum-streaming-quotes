@@ -11,21 +11,17 @@ pub(crate) struct TickersRouter {
 }
 
 impl TickersRouter {
-    pub(crate) fn new(tickers: Vec<String>) -> Self {
-        let tickers_router = tickers
-            .into_iter()
-            .map(|ticker| (ticker, HashMap::new()))
-            .collect();
+    pub(crate) fn new() -> Self {
         Self {
-            tickers_router: RwLock::new(tickers_router),
+            tickers_router: RwLock::new(HashMap::new()),
             client_tickers: RwLock::new(HashMap::new()),
         }
     }
 
-    #[instrument(name = "Add quote route", skip(self, tx), fields(address, tickers = ?ticker))]
+    #[instrument(name = "Add quote route", skip(self, tx), fields(address, tickers))]
     pub(crate) fn add_routes(
         &self,
-        ticker: &[&str],
+        tickers: Vec<String>,
         tx: Sender<StockQuote>,
         client_address: ClientAddress,
     ) -> Result<(), TickersRouterError> {
@@ -38,25 +34,15 @@ impl TickersRouter {
             .write()
             .map_err(|e| TickersRouterError::RwLockPoisoned(e.to_string()))?;
 
-        let not_found = ticker
-            .iter()
-            .find(|ticker| route_lock.get(**ticker).is_none())
-            .map(|ticker| ticker.to_string());
-
-        if let Some(not_found) = not_found {
-            return Err(TickersRouterError::TickerNotFound(not_found));
-        }
-
-        for ticker in ticker {
-            if let Some(clients) = route_lock.get_mut(*ticker) {
-                clients.insert(client_address.clone(), tx.clone());
-                client_lock
-                    .entry(client_address.clone())
-                    .or_default()
-                    .push(ticker.to_string());
-            } else {
-                return Err(TickersRouterError::Unexpect);
-            }
+        for ticker in tickers {
+            route_lock
+                .entry(ticker.to_string())
+                .or_default()
+                .insert(client_address.clone(), tx.clone());
+            client_lock
+                .entry(client_address.clone())
+                .or_default()
+                .push(ticker.to_string());
         }
         Ok(())
     }
@@ -83,22 +69,6 @@ impl TickersRouter {
         self.delete_clients(delete_client)?;
 
         Ok(())
-    }
-
-    #[instrument(name = "Get tickers with subscribers", skip(self))]
-    pub(crate) fn get_tickers_with_subscribers(&self) -> Result<Vec<String>, TickersRouterError> {
-        let lock = self
-            .tickers_router
-            .read()
-            .map_err(|e| TickersRouterError::RwLockPoisoned(e.to_string()))?;
-
-        let result = lock
-            .iter()
-            .filter(|(_, clients)| !clients.is_empty())
-            .map(|(ticker, _)| ticker.clone())
-            .collect();
-
-        Ok(result)
     }
 
     #[instrument(name = "Delete clients from quote route", skip(self), fields(clients = ?clients))]
@@ -139,8 +109,4 @@ impl TickersRouter {
 pub(crate) enum TickersRouterError {
     #[error("Failed to get lock: {0}")]
     RwLockPoisoned(String),
-    #[error("Ticker {0} not found")]
-    TickerNotFound(String),
-    #[error("Unexpected error")]
-    Unexpect,
 }
