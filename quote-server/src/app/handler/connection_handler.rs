@@ -1,6 +1,6 @@
 use crate::app::ServerCancellationToken;
 use crate::app::client_address::ClientAddress;
-use crate::app::handler::stream_quotes::stream_quotes;
+use crate::app::handler::stream_quotes::{StreamQuotesContext, stream_quotes};
 use crate::app::monitoring_router::MonitoringRouter;
 use crate::app::tickers_router::{TickersRouter, TickersRouterError};
 use crossbeam_channel::Sender;
@@ -78,16 +78,15 @@ pub(super) fn handle_connection<R: Read>(
                 return Some(client_address);
             }
 
-            let client_address_copy = client_address.clone();
-            let thread = thread::spawn(move || {
-                stream_quotes(
-                    ctx,
-                    udp_socket,
-                    quote_rx,
-                    monitoring_rx,
-                    client_address_copy,
-                )
-            });
+            let stream_quotes_ctx = StreamQuotesContext::new(
+                ctx,
+                udp_socket,
+                quote_rx,
+                monitoring_rx,
+                client_address.clone(),
+            );
+            let thread = thread::spawn(move || stream_quotes(stream_quotes_ctx));
+
             if let Err(e) = thread_tx.send(thread) {
                 warn!("Failed to send thread handle: {}", e);
                 cancellation_token.cancel();
