@@ -13,15 +13,34 @@ use tracing::{info, instrument, warn};
 mod connection_handler;
 mod stream_quotes;
 
-#[instrument(name = "Accept connection", skip_all)]
-pub(crate) fn accept_connection(
-    stream: TcpStream,
+pub(crate) struct AcceptConnectionContext {
     cancellation_token: Arc<ServerCancellationToken>,
     udp_socket: Arc<UdpSocket>,
     tickers_router: Arc<TickersRouter>,
     monitoring_router: Arc<MonitoringRouter>,
     thread_tx: Sender<JoinHandle<Option<ClientAddress>>>,
-) {
+}
+
+impl AcceptConnectionContext {
+    pub(crate) fn new(
+        cancellation_token: Arc<ServerCancellationToken>,
+        udp_socket: Arc<UdpSocket>,
+        tickers_router: Arc<TickersRouter>,
+        monitoring_router: Arc<MonitoringRouter>,
+        thread_tx: Sender<JoinHandle<Option<ClientAddress>>>,
+    ) -> Self {
+        Self {
+            cancellation_token,
+            udp_socket,
+            tickers_router,
+            monitoring_router,
+            thread_tx,
+        }
+    }
+}
+
+#[instrument(name = "Accept connection", skip_all)]
+pub(crate) fn accept_connection(stream: TcpStream, context: AcceptConnectionContext) {
     let socket_addr = match stream.peer_addr() {
         Ok(addr) => addr,
         Err(e) => {
@@ -30,21 +49,21 @@ pub(crate) fn accept_connection(
         }
     };
 
-    let context = ConnectionHandlerContext::new(
-        Arc::clone(&cancellation_token),
-        udp_socket,
-        tickers_router,
-        monitoring_router,
-        thread_tx.clone(),
+    let handler_context = ConnectionHandlerContext::new(
+        Arc::clone(&context.cancellation_token),
+        context.udp_socket,
+        context.tickers_router,
+        context.monitoring_router,
+        context.thread_tx.clone(),
     );
     let thread = thread::spawn(move || {
         info!("Accepted connection from {}", socket_addr);
-        let result = handle_connection(stream, context);
+        let result = handle_connection(stream, handler_context);
         info!("Connection closed for {}", socket_addr);
         result
     });
-    if let Err(e) = thread_tx.send(thread) {
+    if let Err(e) = context.thread_tx.send(thread) {
         warn!("Failed to send thread handle: {}", e);
-        cancellation_token.cancel();
+        context.cancellation_token.cancel();
     }
 }

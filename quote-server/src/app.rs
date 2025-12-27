@@ -8,7 +8,7 @@ mod server_cancellation_token;
 mod tickers_router;
 
 use crate::app::client_address::ClientAddress;
-use crate::app::listen::run_listening;
+use crate::app::listen::{ListenContext, run_listening};
 use crate::app::monitoring::run_monitoring;
 use crate::app::monitoring_router::MonitoringRouter;
 use crate::app::quotes_generator::run_quotes_generator;
@@ -152,13 +152,15 @@ impl App {
         tickers_router: Arc<TickersRouter>,
         monitoring_router: Arc<MonitoringRouter>,
     ) -> Receiver<JoinHandle<Option<ClientAddress>>> {
-        let (thread_rx, listen_thread) = run_listening(
+        let context = ListenContext::new(
             tcp_listener,
             Arc::clone(&self.cancellation_token),
             udp_socket,
             tickers_router,
             monitoring_router,
         );
+
+        let (thread_rx, listen_thread) = run_listening(context);
         self.service_threads.push(listen_thread);
         thread_rx
     }

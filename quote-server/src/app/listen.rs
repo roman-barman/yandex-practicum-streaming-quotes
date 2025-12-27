@@ -1,5 +1,5 @@
 use crate::app::client_address::ClientAddress;
-use crate::app::handler::accept_connection;
+use crate::app::handler::{AcceptConnectionContext, accept_connection};
 use crate::app::monitoring_router::MonitoringRouter;
 use crate::app::server_cancellation_token::ServerCancellationToken;
 use crate::app::tickers_router::TickersRouter;
@@ -14,46 +14,65 @@ use tracing::{error, info, instrument, warn};
 
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
-#[instrument(name = "Run listening", skip_all)]
-pub(crate) fn run_listening(
+pub(crate) struct ListenContext {
     tcp_listener: TcpListener,
     cancellation_token: Arc<ServerCancellationToken>,
     udp_socket: Arc<UdpSocket>,
     tickers_router: Arc<TickersRouter>,
     monitoring_router: Arc<MonitoringRouter>,
-) -> (Receiver<JoinHandle<Option<ClientAddress>>>, JoinHandle<()>) {
-    let (tx, rx) = crossbeam_channel::unbounded::<JoinHandle<Option<ClientAddress>>>();
-    let thread = thread::spawn(move || {
-        listen(
+}
+
+impl ListenContext {
+    pub(crate) fn new(
+        tcp_listener: TcpListener,
+        cancellation_token: Arc<ServerCancellationToken>,
+        udp_socket: Arc<UdpSocket>,
+        tickers_router: Arc<TickersRouter>,
+        monitoring_router: Arc<MonitoringRouter>,
+    ) -> Self {
+        Self {
             tcp_listener,
             cancellation_token,
             udp_socket,
             tickers_router,
             monitoring_router,
-            tx,
+        }
+    }
+
+    fn to_accept_context(
+        &self,
+        thread_tx: Sender<JoinHandle<Option<ClientAddress>>>,
+    ) -> AcceptConnectionContext {
+        AcceptConnectionContext::new(
+            Arc::clone(&self.cancellation_token),
+            Arc::clone(&self.udp_socket),
+            Arc::clone(&self.tickers_router),
+            Arc::clone(&self.monitoring_router),
+            thread_tx,
         )
-    });
+    }
+}
+
+#[instrument(name = "Run listening", skip_all)]
+pub(crate) fn run_listening(
+    context: ListenContext,
+) -> (Receiver<JoinHandle<Option<ClientAddress>>>, JoinHandle<()>) {
+    let (tx, rx) = crossbeam_channel::unbounded::<JoinHandle<Option<ClientAddress>>>();
+    let thread = thread::spawn(move || listen(context, tx));
     (rx, thread)
 }
 
 #[instrument(name = "Listen", skip_all)]
-fn listen(
-    tcp_listener: TcpListener,
-    cancellation_token: Arc<ServerCancellationToken>,
-    udp_socket: Arc<UdpSocket>,
-    tickers_router: Arc<TickersRouter>,
-    monitoring_router: Arc<MonitoringRouter>,
-    thread_tx: Sender<JoinHandle<Option<ClientAddress>>>,
-) {
-    let Ok(local_addr) = tcp_listener.local_addr() else {
+fn listen(context: ListenContext, thread_tx: Sender<JoinHandle<Option<ClientAddress>>>) {
+    let Ok(local_addr) = context.tcp_listener.local_addr() else {
         error!("Failed to get local address");
-        cancellation_token.cancel();
+        context.cancellation_token.cancel();
         return;
     };
 
     info!("Listening on {}:{}", local_addr.ip(), local_addr.port());
-    for stream in tcp_listener.incoming() {
-        if cancellation_token.is_cancelled() {
+    for stream in context.tcp_listener.incoming() {
+        if context.cancellation_token.is_cancelled() {
             break;
         }
 
@@ -69,13 +88,6 @@ fn listen(
             }
         };
 
-        accept_connection(
-            stream,
-            Arc::clone(&cancellation_token),
-            Arc::clone(&udp_socket),
-            Arc::clone(&tickers_router),
-            Arc::clone(&monitoring_router),
-            thread_tx.clone(),
-        );
+        accept_connection(stream, context.to_accept_context(thread_tx.clone()));
     }
 }
