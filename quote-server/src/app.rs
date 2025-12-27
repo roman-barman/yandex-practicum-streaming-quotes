@@ -19,7 +19,10 @@ use std::collections::HashSet;
 use std::net::{IpAddr, TcpListener, UdpSocket};
 use std::sync::Arc;
 use std::thread::JoinHandle;
+use std::time::Duration;
 use tracing::{info, trace};
+
+const STOP_DURATION: Duration = Duration::from_millis(100);
 
 pub(super) struct App {
     service_threads: Vec<JoinHandle<()>>,
@@ -47,7 +50,7 @@ impl App {
 
         let udp_socket = Arc::new(UdpSocket::bind((address, port))?);
         udp_socket.set_nonblocking(true)?;
-        udp_socket.set_read_timeout(Some(std::time::Duration::from_millis(500)))?;
+        udp_socket.set_read_timeout(Some(Duration::from_millis(500)))?;
 
         let tickers_router = Arc::new(TickersRouter::new(tickers));
         let monitoring_router = Arc::new(MonitoringRouter::default());
@@ -76,45 +79,50 @@ impl App {
         monitoring_router: Arc<MonitoringRouter>,
         tickers_router: Arc<TickersRouter>,
     ) {
-        loop {
-            if self.cancellation_token.is_cancelled() {
-                break;
-            }
-
+        while !self.cancellation_token.is_cancelled() {
             match client_thread_rx.try_recv() {
                 Ok(thread) => self.client_threads.push(thread),
-                Err(crossbeam_channel::TryRecvError::Empty) => {
-                    std::thread::sleep(std::time::Duration::from_millis(100))
-                }
+                Err(crossbeam_channel::TryRecvError::Empty) => std::thread::sleep(STOP_DURATION),
                 Err(crossbeam_channel::TryRecvError::Disconnected) => {
                     self.cancellation_token.cancel();
                     break;
                 }
             }
+            self.check_clients_threads(&monitoring_router, &tickers_router);
+        }
 
-            let mut threads_to_delete = vec![];
+        self.join_threads();
+    }
 
-            for (i, thread) in self.client_threads.iter().enumerate() {
-                if thread.is_finished() {
-                    threads_to_delete.push(i);
-                }
-            }
+    fn check_clients_threads(
+        &mut self,
+        monitoring_router: &Arc<MonitoringRouter>,
+        tickers_router: &Arc<TickersRouter>,
+    ) {
+        let mut threads_to_delete = vec![];
 
-            for i in threads_to_delete.into_iter().rev() {
-                let thread = self.client_threads.swap_remove(i);
-                trace!("Joining thread");
-                let client_address = thread.join().expect("Failed to join thread");
-                if let Some(address) = client_address {
-                    monitoring_router
-                        .delete(&address)
-                        .expect("Failed to delete client from monitoring router");
-                    tickers_router
-                        .delete_clients(HashSet::from([address]))
-                        .expect("Failed to delete clients from tickers router");
-                }
+        for (i, thread) in self.client_threads.iter().enumerate() {
+            if thread.is_finished() {
+                threads_to_delete.push(i);
             }
         }
 
+        for i in threads_to_delete.into_iter().rev() {
+            let thread = self.client_threads.swap_remove(i);
+            trace!("Joining thread");
+            let client_address = thread.join().expect("Failed to join thread");
+            if let Some(address) = client_address {
+                monitoring_router
+                    .delete(&address)
+                    .expect("Failed to delete client from monitoring router");
+                tickers_router
+                    .delete_clients(HashSet::from([address]))
+                    .expect("Failed to delete clients from tickers router");
+            }
+        }
+    }
+
+    fn join_threads(self) {
         for (i, thread) in self.client_threads.into_iter().enumerate() {
             trace!("Waiting for client thread {} to finish", i);
             thread.join().expect("Failed to join thread");
