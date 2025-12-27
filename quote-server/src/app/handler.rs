@@ -1,6 +1,6 @@
 use crate::app::ServerCancellationToken;
 use crate::app::client_address::ClientAddress;
-use crate::app::handler::connection_handler::handle_connection;
+use crate::app::handler::connection_handler::{ConnectionHandlerContext, handle_connection};
 use crate::app::monitoring_router::MonitoringRouter;
 use crate::app::tickers_router::TickersRouter;
 use crossbeam_channel::Sender;
@@ -22,8 +22,6 @@ pub(crate) fn accept_connection(
     monitoring_router: Arc<MonitoringRouter>,
     thread_tx: Sender<JoinHandle<Option<ClientAddress>>>,
 ) {
-    let thread_tx_copy = thread_tx.clone();
-    let ctx = Arc::clone(&cancellation_token);
     let socket_addr = match stream.peer_addr() {
         Ok(addr) => addr,
         Err(e) => {
@@ -31,16 +29,17 @@ pub(crate) fn accept_connection(
             return;
         }
     };
+
+    let context = ConnectionHandlerContext::new(
+        Arc::clone(&cancellation_token),
+        udp_socket,
+        tickers_router,
+        monitoring_router,
+        thread_tx.clone(),
+    );
     let thread = thread::spawn(move || {
         info!("Accepted connection from {}", socket_addr);
-        let result = handle_connection(
-            stream,
-            ctx,
-            udp_socket,
-            tickers_router,
-            monitoring_router,
-            thread_tx_copy,
-        );
+        let result = handle_connection(stream, context);
         info!("Connection closed for {}", socket_addr);
         result
     });
