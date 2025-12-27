@@ -3,7 +3,7 @@ use crossbeam_channel::Sender;
 use quote_streaming::StockQuote;
 use std::collections::{HashMap, HashSet};
 use std::sync::RwLock;
-use tracing::instrument;
+use tracing::{info, instrument};
 
 pub(crate) struct TickersRouter {
     tickers_router: RwLock<HashMap<String, HashMap<ClientAddress, Sender<StockQuote>>>>,
@@ -92,11 +92,11 @@ impl TickersRouter {
         for client_address in clients.into_iter() {
             if let Some(tickers) = client_lock.remove(&client_address) {
                 for ticker in tickers {
-                    route_lock.entry(ticker).and_modify(|clients| {
+                    route_lock.entry(ticker.clone()).and_modify(|clients| {
                         clients.remove(&client_address);
-                        println!(
-                            "Removed client from ticker route: client={}",
-                            client_address
+                        info!(
+                            "Removed client from ticker route: client={}, ticker={}",
+                            client_address, ticker
                         );
                     });
                 }

@@ -13,7 +13,7 @@ mod tracing;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-    initialize_tracing_subscribe("info".into());
+    initialize_tracing_subscribe(args.log_level());
 
     let port = args.port.unwrap_or(5152);
     let address = args

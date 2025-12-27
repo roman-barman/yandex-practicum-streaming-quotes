@@ -60,7 +60,6 @@ impl MonitoringRouter {
             .map_err(|e| MonitoringRouterError::RwLockPoisoned(e.to_string()))?;
         lock.remove(address);
         info!("Removed monitoring route for address: {}", address);
-        println!("Removed monitoring route for address: {}", address);
         Ok(())
     }
 }

@@ -3,7 +3,7 @@ use tracing_log::LogTracer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::{EnvFilter, Registry, fmt};
 
-pub(super) fn initialize_tracing_subscribe(env_filter: String) {
+pub(super) fn initialize_tracing_subscribe(env_filter: &str) {
     let env_filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(env_filter));
     let json_layer = fmt::layer()
