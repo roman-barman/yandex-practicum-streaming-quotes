@@ -61,7 +61,7 @@ fn main() {
     ping_thread.join().expect("Failed to join ping thread");
 }
 
-fn show_app_title(server_address: IpAddr, server_port: u16, tickers: &Vec<String>) {
+fn show_app_title(server_address: IpAddr, server_port: u16, tickers: &[String]) {
     println!("Client started");
     println!("======================");
     println!("Server address  {}:{}", server_address, server_port);
