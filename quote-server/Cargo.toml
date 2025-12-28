@@ -11,6 +11,6 @@ rkyv = { workspace = true }
 quote-streaming = { path = "../quote-streaming" }
 rancor = { workspace = true }
 clap = { workspace = true }
-ctrlc = "3"
+ctrlc = { workspace = true }
 crossbeam-channel = "0.5"
 thiserror = "2"

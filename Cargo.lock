@@ -646,6 +646,7 @@ name = "quote-client"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "ctrlc",
  "quote-streaming",
  "rancor",
  "rkyv 0.8.12",
