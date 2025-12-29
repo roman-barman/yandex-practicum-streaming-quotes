@@ -4,11 +4,15 @@ use std::io::ErrorKind;
 use std::net::UdpSocket;
 use std::sync::Arc;
 
+const MAX_ATTEMPTS: usize = 10;
+
 pub(crate) fn read_udp_response(
     cancellation_token: Arc<CancellationToken>,
     socket: Arc<UdpSocket>,
 ) -> Result<(), ReadUdpResponseError> {
     let mut buffer = [0; 1024];
+    let mut attempts = 0;
+
     while !cancellation_token.is_cancelled() {
         let len = match socket.recv(&mut buffer) {
             Ok(read_bytes) => read_bytes,
@@ -24,12 +28,21 @@ pub(crate) fn read_udp_response(
             }
         };
         match Response::try_from(&buffer[..len]) {
-            Ok(Response::Quote(quote)) => println!("{}", quote),
-            Ok(Response::Pong) | Ok(Response::Ok) => {}
-            Ok(Response::Error(err)) => println!("Server send error: {}", err),
+            Ok(response) => {
+                attempts = 0;
+                match response {
+                    Response::Quote(quote) => println!("{}", quote),
+                    Response::Pong | Response::Ok => {}
+                    Response::Error(err) => println!("Server send error: {}", err),
+                }
+            }
             Err(e) => {
-                cancellation_token.cancel();
-                return Err(ReadUdpResponseError::InvalidResponse(e));
+                if attempts < MAX_ATTEMPTS {
+                    attempts += 1;
+                } else {
+                    cancellation_token.cancel();
+                    return Err(ReadUdpResponseError::InvalidResponse(e));
+                }
             }
         }
     }
