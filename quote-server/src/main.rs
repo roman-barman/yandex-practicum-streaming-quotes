@@ -11,11 +11,13 @@ mod app;
 mod args;
 mod tracing;
 
+const DEFAULT_PORT: u16 = 5152;
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     initialize_tracing_subscribe(args.log_level());
 
-    let port = args.port.unwrap_or(5152);
+    let port = args.port.unwrap_or(DEFAULT_PORT);
     let address = args
         .address
         .unwrap_or(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));

@@ -1,21 +1,16 @@
 mod client_address;
 mod error;
-mod handler;
-mod listen;
+mod listener;
 mod monitoring;
-mod monitoring_router;
-mod quotes_generator;
+mod quote_streaming;
 mod server_cancellation_token;
-mod tickers_router;
 
 use crate::app::client_address::ClientAddress;
 use crate::app::error::AppError;
-use crate::app::listen::{ListenContext, run_listening};
-use crate::app::monitoring::run_monitoring;
-use crate::app::monitoring_router::MonitoringRouter;
-use crate::app::quotes_generator::run_quotes_generator;
+use crate::app::listener::{ListenContext, run_listening};
+use crate::app::monitoring::{MonitoringRouter, run_monitoring};
+use crate::app::quote_streaming::{TickersRouter, run_quotes_generator};
 use crate::app::server_cancellation_token::ServerCancellationToken;
-use crate::app::tickers_router::TickersRouter;
 use crossbeam_channel::Receiver;
 use std::collections::HashSet;
 use std::mem;

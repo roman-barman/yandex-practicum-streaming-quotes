@@ -1,5 +1,5 @@
-use crate::app::monitoring_router::MonitoringRouterError;
-use crate::app::tickers_router::TickersRouterError;
+use crate::app::monitoring::MonitoringRouterError;
+use crate::app::quote_streaming::TickersRouterError;
 
 #[derive(Debug, thiserror::Error)]
 pub(super) enum AppError {

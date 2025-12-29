@@ -1,5 +1,5 @@
+use crate::app::quote_streaming::tickers_router::TickersRouter;
 use crate::app::server_cancellation_token::ServerCancellationToken;
-use crate::app::tickers_router::TickersRouter;
 use quote_streaming::StockQuote;
 use std::sync::Arc;
 use std::thread;

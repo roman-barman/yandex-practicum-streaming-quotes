@@ -1,17 +1,14 @@
 use crate::app::ServerCancellationToken;
 use crate::app::client_address::ClientAddress;
-use crate::app::handler::connection_handler::{ConnectionHandlerContext, handle_connection};
-use crate::app::monitoring_router::MonitoringRouter;
-use crate::app::tickers_router::TickersRouter;
+use crate::app::listener::connection_handler::{ConnectionHandlerContext, handle_connection};
+use crate::app::monitoring::MonitoringRouter;
+use crate::app::quote_streaming::TickersRouter;
 use crossbeam_channel::Sender;
 use std::net::{TcpStream, UdpSocket};
 use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
 use tracing::{info, instrument, warn};
-
-mod connection_handler;
-mod stream_quotes;
 
 pub(crate) struct AcceptConnectionContext {
     cancellation_token: Arc<ServerCancellationToken>,

@@ -36,7 +36,7 @@ impl StreamQuotesContext {
 }
 
 #[instrument(name = "Stream quotes", skip_all)]
-pub(super) fn stream_quotes(context: StreamQuotesContext) -> Option<ClientAddress> {
+pub(crate) fn stream_quotes(context: StreamQuotesContext) -> Option<ClientAddress> {
     let mut last_ping_time = Instant::now();
 
     while !context.cancellation_token.is_cancelled() {

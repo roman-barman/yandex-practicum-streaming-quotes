@@ -1,8 +1,9 @@
 use crate::app::ServerCancellationToken;
 use crate::app::client_address::ClientAddress;
-use crate::app::handler::stream_quotes::{StreamQuotesContext, stream_quotes};
-use crate::app::monitoring_router::{MonitoringRouter, MonitoringRouterError};
-use crate::app::tickers_router::{TickersRouter, TickersRouterError};
+use crate::app::monitoring::{MonitoringRouter, MonitoringRouterError};
+use crate::app::quote_streaming::{
+    StreamQuotesContext, TickersRouter, TickersRouterError, stream_quotes,
+};
 use crossbeam_channel::Sender;
 use quote_streaming::{Request, Response, StockQuote};
 use std::io::{Read, Write};
