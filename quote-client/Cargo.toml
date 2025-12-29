@@ -7,3 +7,5 @@ edition = "2024"
 quote-streaming = { path = "../quote-streaming" }
 clap = { workspace = true }
 ctrlc = { workspace = true }
+thiserror = { workspace = true }
+rancor = { workspace = true }

@@ -12,4 +12,4 @@ rancor = { workspace = true }
 clap = { workspace = true }
 ctrlc = { workspace = true }
 crossbeam-channel = "0.5"
-thiserror = "2"
+thiserror = { workspace = true }

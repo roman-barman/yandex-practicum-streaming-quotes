@@ -648,6 +648,8 @@ dependencies = [
  "clap",
  "ctrlc",
  "quote-streaming",
+ "rancor",
+ "thiserror",
 ]
 
 [[package]]
