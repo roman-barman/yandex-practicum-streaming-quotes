@@ -48,7 +48,6 @@ pub(crate) fn stream_quotes(context: StreamQuotesContext) -> Option<ClientAddres
                     }
                     Err(_) => {
                         warn!("Monitoring receiver disconnected");
-                        context.cancellation_token.cancel();
                         break;
                     }
                 }
@@ -70,7 +69,6 @@ pub(crate) fn stream_quotes(context: StreamQuotesContext) -> Option<ClientAddres
                     },
                     Err(_) => {
                         warn!("Quotes receiver disconnected");
-                        context.cancellation_token.cancel();
                         break;
                     }
                 }
