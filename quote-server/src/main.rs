@@ -21,8 +21,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
     let tickers = read_tickers(&args)?;
 
-    let app = App::new();
-    app.run(address, port, tickers)?;
+    let app = App::new(address, port, tickers);
+    app.run();
 
     Ok(())
 }
