@@ -8,7 +8,7 @@ use crate::cancellation_token::CancellationToken;
 use clap::Parser;
 use quote_streaming::{Request, Response};
 use rancor::Error;
-use std::io::{BufRead, ErrorKind, Write};
+use std::io::{BufRead, ErrorKind, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, TcpStream, UdpSocket};
 use std::sync::Arc;
 use std::thread;
@@ -70,8 +70,8 @@ fn show_app_title(server_address: IpAddr, server_port: u16, tickers: &[String]) 
 }
 
 fn read_responses(cancellation_token: Arc<CancellationToken>, socket: Arc<UdpSocket>) {
+    let mut buffer = [0; 1024];
     while !cancellation_token.is_cancelled() {
-        let mut buffer = [0; 1024];
         let len = match socket.recv(&mut buffer) {
             Ok(read_bytes) => read_bytes,
             Err(e) => {
@@ -85,9 +85,9 @@ fn read_responses(cancellation_token: Arc<CancellationToken>, socket: Arc<UdpSoc
                 break;
             }
         };
-        match rkyv::from_bytes::<Response, rancor::Error>(&buffer[..len]) {
+        match deserialize_response(&buffer[..len]) {
             Ok(Response::Quote(quote)) => println!("{}", quote),
-            Ok(Response::Pong) => {}
+            Ok(Response::Pong) | Ok(Response::Ok) => {}
             Ok(Response::Error(err)) => println!("Server send error: {}", err),
             Err(e) => {
                 eprintln!("Failed to deserialize response: {}", e);
@@ -96,6 +96,10 @@ fn read_responses(cancellation_token: Arc<CancellationToken>, socket: Arc<UdpSoc
             }
         }
     }
+}
+
+fn deserialize_response(bytes: &[u8]) -> Result<Response, Error> {
+    rkyv::from_bytes::<Response, rancor::Error>(bytes)
 }
 
 fn send_request(
@@ -117,6 +121,18 @@ fn send_request(
     stream
         .write_all(bytes.as_slice())
         .expect("Failed to send request to server");
+
+    let mut buffer = [0; 1024];
+    let len = stream
+        .read(&mut buffer)
+        .expect("Failed to read response from server");
+    let response = deserialize_response(&buffer[..len]);
+    match response {
+        Ok(Response::Ok) => println!("Successfully subscribed to tickers"),
+        Ok(Response::Error(err)) => println!("Failed to subscribe to tickers: {}", err),
+        Err(e) => println!("Failed to deserialize response: {}", e),
+        _ => {}
+    }
 }
 
 fn get_tickers(source: TickersSource) -> Vec<String> {

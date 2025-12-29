@@ -7,4 +7,5 @@ pub enum Response {
     Quote(StockQuote),
     Pong,
     Error(String),
+    Ok,
 }
