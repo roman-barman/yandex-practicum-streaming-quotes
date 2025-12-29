@@ -4,12 +4,17 @@ use rkyv::{Archive, Deserialize, Serialize};
 use rust_decimal::Decimal;
 use std::fmt::{Display, Formatter};
 
+/// Represents a single stock quote update.
 #[derive(Debug, Clone, Eq, PartialEq, Archive, Deserialize, Serialize)]
 #[rkyv(compare(PartialEq), derive(Debug))]
 pub struct StockQuote {
+    /// The ticker symbol of the stock (e.g., "AAPL").
     ticker: String,
+    /// The price of the stock, multiplied by 100 to avoid floating point issues.
     price: i64,
+    /// The volume of shares traded in this update.
     volume: u32,
+    /// The Unix timestamp when the quote was generated.
     timestamp: i64,
 }
 
@@ -29,6 +34,10 @@ impl Display for StockQuote {
 }
 
 impl StockQuote {
+    /// Generates a random `StockQuote` for the given ticker.
+    ///
+    /// The price is randomly generated between 1.00 and 1000.00.
+    /// The volume is randomly generated between 10 and 1000.
     pub fn generate(ticker: &str) -> Self {
         let mut rng = rand::rng();
         Self {
@@ -39,6 +48,7 @@ impl StockQuote {
         }
     }
 
+    /// Returns the ticker symbol of the stock.
     pub fn ticker(&self) -> &str {
         &self.ticker
     }
