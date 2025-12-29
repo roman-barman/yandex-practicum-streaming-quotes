@@ -24,7 +24,7 @@ fn monitoring(
     udp_socket: Arc<UdpSocket>,
     router: Arc<MonitoringRouter>,
 ) {
-    let pong = match rkyv::to_bytes::<rancor::Error>(&Response::Pong) {
+    let pong: Vec<u8> = match Response::Pong.try_into() {
         Ok(bytes) => bytes,
         Err(err) => {
             error!("Failed to serialize pong message: {}", err);
@@ -32,15 +32,14 @@ fn monitoring(
         }
     };
 
-    let error_response = match rkyv::to_bytes::<rancor::Error>(&Response::Error(
-        "Invalid request. Expected PING".to_string(),
-    )) {
-        Ok(bytes) => bytes,
-        Err(err) => {
-            error!("Failed to serialize error message: {}", err);
-            return;
-        }
-    };
+    let error_response: Vec<u8> =
+        match Response::Error("Invalid request. Expected PING".to_string()).try_into() {
+            Ok(bytes) => bytes,
+            Err(err) => {
+                error!("Failed to serialize error message: {}", err);
+                return;
+            }
+        };
 
     let mut buffer = [0; 1024];
     loop {
@@ -49,32 +48,29 @@ fn monitoring(
         }
 
         match udp_socket.recv_from(&mut buffer) {
-            Ok((size, address)) => {
-                let request = rkyv::from_bytes::<Request, rancor::Error>(&buffer[..size]);
-                match request {
-                    Ok(Request::Ping) => {
-                        trace!("Received ping from {}", address);
-                        if let Err(e) = udp_socket.send_to(&pong, address) {
-                            warn!("Failed to send pong to {}: {}", address, e);
-                            continue;
-                        }
+            Ok((size, address)) => match Request::try_from(&buffer[..size]) {
+                Ok(Request::Ping) => {
+                    trace!("Received ping from {}", address);
+                    if let Err(e) = udp_socket.send_to(&pong, address) {
+                        warn!("Failed to send pong to {}: {}", address, e);
+                        continue;
+                    }
 
-                        let ip_address = address.ip();
-                        let port = address.port();
-                        let address = ClientAddress::new(ip_address, port);
-                        if let Err(e) = router.send_ping(&address) {
-                            warn!("Failed to send ping to monitoring router: {}", e);
-                        }
+                    let ip_address = address.ip();
+                    let port = address.port();
+                    let address = ClientAddress::new(ip_address, port);
+                    if let Err(e) = router.send_ping(&address) {
+                        warn!("Failed to send ping to monitoring router: {}", e);
                     }
-                    Ok(_) => {
-                        warn!("Received invalid request from {}", address);
-                        if let Err(e) = udp_socket.send_to(&error_response, address) {
-                            warn!("Failed to send error response to {}: {}", address, e);
-                        }
-                    }
-                    Err(e) => warn!("Failed to deserialize keep alive message: {}", e),
                 }
-            }
+                Ok(_) => {
+                    warn!("Received invalid request from {}", address);
+                    if let Err(e) = udp_socket.send_to(&error_response, address) {
+                        warn!("Failed to send error response to {}: {}", address, e);
+                    }
+                }
+                Err(e) => warn!("Failed to deserialize keep alive message: {}", e),
+            },
             Err(ref e) if e.kind() == ErrorKind::WouldBlock || e.kind() == ErrorKind::TimedOut => {
                 continue;
             }

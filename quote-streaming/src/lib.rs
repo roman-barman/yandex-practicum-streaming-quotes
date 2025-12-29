@@ -1,4 +1,5 @@
 #![deny(unreachable_pub)]
+mod bytes;
 mod request;
 mod response;
 mod stock_quote;

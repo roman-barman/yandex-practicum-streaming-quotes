@@ -52,7 +52,7 @@ pub(super) fn handle_connection<R: Read + Write>(
         Err(ReadRequestError::InvalidRequest(e)) => {
             warn!("Invalid request: {}", e);
             let response = Response::Error("Invalid request".to_string());
-            send_response_safe(&mut stream, &response, &context.cancellation_token);
+            send_response_safe(&mut stream, response, &context.cancellation_token);
             return None;
         }
         Err(e) => {
@@ -76,12 +76,12 @@ pub(super) fn handle_connection<R: Read + Write>(
                 return Some(client_address);
             }
             let response = Response::Ok;
-            send_response_safe(&mut stream, &response, &cancellation_token);
+            send_response_safe(&mut stream, response, &cancellation_token);
             None
         }
         Request::Ping => {
             let response = Response::Error("Unexpected request".to_string());
-            send_response_safe(&mut stream, &response, &context.cancellation_token);
+            send_response_safe(&mut stream, response, &context.cancellation_token);
             None
         }
     }
@@ -120,7 +120,7 @@ fn start_stream_quotes(
 
 fn send_response_safe<W: Write>(
     writer: &mut W,
-    response: &Response,
+    response: Response,
     cancellation_token: &Arc<ServerCancellationToken>,
 ) {
     if let Err(e) = write_response(response, writer) {
@@ -137,12 +137,12 @@ fn send_response_safe<W: Write>(
 fn read_request<R: Read>(mut reader: R) -> Result<Request, ReadRequestError> {
     let mut buffer = [0; 1024];
     let len = reader.read(&mut buffer)?;
-    let command = rkyv::from_bytes::<Request, rancor::Error>(&buffer[..len])?;
+    let command = Request::try_from(&buffer[..len])?;
     Ok(command)
 }
 
-fn write_response<W: Write>(response: &Response, writer: &mut W) -> Result<(), WriteResponseError> {
-    let response = rkyv::to_bytes::<rancor::Error>(response)?;
+fn write_response<W: Write>(response: Response, writer: &mut W) -> Result<(), WriteResponseError> {
+    let response: Vec<u8> = response.try_into()?;
     writer.write_all(&response)?;
     Ok(())
 }

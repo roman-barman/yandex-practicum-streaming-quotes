@@ -7,7 +7,6 @@ use crate::args::{Args, TickersSource};
 use crate::cancellation_token::CancellationToken;
 use clap::Parser;
 use quote_streaming::{Request, Response};
-use rancor::Error;
 use std::io::{BufRead, ErrorKind, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, TcpStream, UdpSocket};
 use std::sync::Arc;
@@ -85,7 +84,7 @@ fn read_responses(cancellation_token: Arc<CancellationToken>, socket: Arc<UdpSoc
                 break;
             }
         };
-        match deserialize_response(&buffer[..len]) {
+        match Response::try_from(&buffer[..len]) {
             Ok(Response::Quote(quote)) => println!("{}", quote),
             Ok(Response::Pong) | Ok(Response::Ok) => {}
             Ok(Response::Error(err)) => println!("Server send error: {}", err),
@@ -98,10 +97,6 @@ fn read_responses(cancellation_token: Arc<CancellationToken>, socket: Arc<UdpSoc
     }
 }
 
-fn deserialize_response(bytes: &[u8]) -> Result<Response, Error> {
-    rkyv::from_bytes::<Response, rancor::Error>(bytes)
-}
-
 fn send_request(
     tickers: Vec<String>,
     server_address: IpAddr,
@@ -109,12 +104,12 @@ fn send_request(
     client_address: IpAddr,
     client_port: u16,
 ) {
-    let command = Request::StreamTickers {
+    let request = Request::StreamTickers {
         ticker: tickers,
         address: client_address,
         port: client_port,
     };
-    let bytes = rkyv::to_bytes::<Error>(&command).expect("Failed to serialize command");
+    let bytes: Vec<u8> = request.try_into().expect("Failed to serialize command");
 
     let mut stream = TcpStream::connect(format!("{}:{}", server_address, server_port))
         .expect("Failed to connect to server");
@@ -126,7 +121,7 @@ fn send_request(
     let len = stream
         .read(&mut buffer)
         .expect("Failed to read response from server");
-    let response = deserialize_response(&buffer[..len]);
+    let response = Response::try_from(&buffer[..len]);
     match response {
         Ok(Response::Ok) => println!("Successfully subscribed to tickers"),
         Ok(Response::Error(err)) => println!("Failed to subscribe to tickers: {}", err),
@@ -156,7 +151,9 @@ fn send_ping(
     sender_address: IpAddr,
     server_port: u16,
 ) -> thread::JoinHandle<()> {
-    let ping = rkyv::to_bytes::<Error>(&Request::Ping).expect("Failed to serialize ping request");
+    let ping: Vec<u8> = Request::Ping
+        .try_into()
+        .expect("Failed to serialize ping request");
     thread::spawn(move || {
         while !cancellation_token.is_cancelled() {
             if let Err(e) = socket.send_to(&ping, (sender_address, server_port)) {

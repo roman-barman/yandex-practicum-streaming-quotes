@@ -57,7 +57,8 @@ pub(super) fn stream_quotes(context: StreamQuotesContext) -> Option<ClientAddres
                 match msg {
                     Ok(quote) => {
                         trace!("Received quotes {}", quote.ticker());
-                        let Ok(quotes_bytes) = rkyv::to_bytes::<rancor::Error>(&Response::Quote(quote.clone())) else {
+                        let response: Result<Vec<u8>,_> = Response::Quote(quote.clone()).try_into();
+                        let Ok(quotes_bytes) = response else {
                                 warn!("Failed to serialize quote: {:?}", quote);
                                 context.cancellation_token.cancel();
                                 break;
