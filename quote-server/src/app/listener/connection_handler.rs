@@ -53,7 +53,7 @@ pub(super) fn handle_connection<R: Read + Write>(
         Err(ReadRequestError::InvalidRequest(e)) => {
             warn!("Invalid request: {}", e);
             let response = Response::Error("Invalid request".to_string());
-            send_response_safe(&mut stream, response, &context.cancellation_token);
+            send_response(&mut stream, response, &context.cancellation_token);
             return None;
         }
         Err(e) => {
@@ -77,12 +77,12 @@ pub(super) fn handle_connection<R: Read + Write>(
                 return Some(client_address);
             }
             let response = Response::Ok;
-            send_response_safe(&mut stream, response, &cancellation_token);
+            send_response(&mut stream, response, &cancellation_token);
             None
         }
         Request::Ping => {
             let response = Response::Error("Unexpected request".to_string());
-            send_response_safe(&mut stream, response, &context.cancellation_token);
+            send_response(&mut stream, response, &context.cancellation_token);
             None
         }
     }
@@ -119,19 +119,23 @@ fn start_stream_quotes(
     Ok(())
 }
 
-fn send_response_safe<W: Write>(
+fn send_response<W: Write>(
     writer: &mut W,
     response: Response,
     cancellation_token: &Arc<ServerCancellationToken>,
 ) {
-    if let Err(e) = write_response(response, writer) {
-        match e {
-            WriteResponseError::Io(e) => warn!("Failed to write response: {}", e),
-            WriteResponseError::InvalidResponse(e) => {
-                error!("Failed to serialize response: {}", e);
-                cancellation_token.cancel();
-            }
+    let response: Result<Vec<u8>, _> = response.try_into();
+    let response = match response {
+        Ok(response) => response,
+        Err(e) => {
+            error!("Failed to serialize response: {}", e);
+            cancellation_token.cancel();
+            return;
         }
+    };
+
+    if let Err(e) = writer.write_all(&response) {
+        warn!("Failed to send response: {}", e);
     }
 }
 
@@ -142,26 +146,12 @@ fn read_request<R: Read>(mut reader: R) -> Result<Request, ReadRequestError> {
     Ok(command)
 }
 
-fn write_response<W: Write>(response: Response, writer: &mut W) -> Result<(), WriteResponseError> {
-    let response: Vec<u8> = response.try_into()?;
-    writer.write_all(&response)?;
-    Ok(())
-}
-
 #[derive(Debug, thiserror::Error)]
 enum ReadRequestError {
     #[error("Failed to read request: {0}")]
     Io(#[from] std::io::Error),
     #[error("Failed to deserialize request: {0}")]
     InvalidRequest(#[from] rancor::Error),
-}
-
-#[derive(Debug, thiserror::Error)]
-enum WriteResponseError {
-    #[error("Failed to write response: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("Failed to serialize response: {0}")]
-    InvalidResponse(#[from] rancor::Error),
 }
 
 #[derive(Debug, thiserror::Error)]

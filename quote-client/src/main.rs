@@ -27,7 +27,7 @@ fn main() {
         client_port,
     );
     if let Err(e) = app.run() {
-        eprintln!("Error: {}", e);
+        eprintln!("{}", e);
     }
 }
 
